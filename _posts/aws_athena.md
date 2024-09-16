@@ -15,8 +15,8 @@ ogImage:
 
 ## Summary 
 
-This blog describes some key aspects & learnings when working with AWS Athena service.
-Some learnings are on top of best practices, and deal with tabular data processing use case
+This blog describes some key aspects & learnings from experience working with AWS Athena.
+Some learnings are on top of best practices, and deal with tabular data processing use case specifically.
 
 
 Read AWS documentation for details on how this service works, and come back here ! 
@@ -32,10 +32,9 @@ Read AWS documentation for details on how this service works, and come back here
 
 Basic premise that Athena works efficiently on is to limit the size of data to scan, to read desired results.
 
-When the query conditions are known, instead of querying a large file in GBs, partition it, to direct your queries to query on
-smaller file sets and be faster.
-Hive partitions are supported in S3 and can be used to partition data with a partition key as a query parameter and value as a data field
-that seems fit
+When the query conditions are known, instead of querying a large file in GBs, partition it, to direct your queries to query on smaller file sets and be faster.
+
+Hive partitions are supported in S3 and can be used to partition data with a partition key as a query parameter and value as a data field that seems fit.
 
 Now partitioning depends on use case itself, and mandatory attributes in your query to Athena which can decide partition keys.
 
@@ -55,7 +54,7 @@ and "attr5.." are optionally provided.
  | key_element_1 | 20        | 40        | 25        | 10        | DEF       | 43.99        | 20000      |
  | key_element_2 | 30        | 21        | 100       | 40        | KKJ       | 3333.99      | 324300     |
  | key_element_2 | 35        | 34        | 62        | 90        | LOIP      | 432435.6     | 320000     |
- | key_element_3 | 10        | 60        | 200       | 11-       | SSDS      | 1221.5       | 120000     |
+ | key_element_3 | 10        | 60        | 200       | 11        | SSDS      | 1221.5       | 120000     |
 
 
 ## Partitioning strategy
@@ -64,7 +63,7 @@ Columnar data partitions are more efficient when querying, but if that is applic
 Parquet data format storage was *not explored* in this solution, and generally be considered when designing Athena based solutions
 
 Here we used tabular data strategy.
-In above case, we always receive a load case, defined by attr1_num, attr2_num, attr3_num and attr4_num/ attr5_num (optional)
+In above case, we always receive user input, defined by attr1_num, attr2_num, attr3_num and attr4_num/ attr5_num (optional).
 This means, that we could partition our data, to have first mandatory elements and then optional (last partitions).
 
 A good strategy to partition data can be then:
@@ -113,7 +112,7 @@ Partitions can look like this:
 ```
 Using 24 attr1 ranges as  [(0, 65), (66, 265), (266, 465), (466, 665), (666, 865), (866, 1065), (1066, 1265), (1266, 1465), (1466, 1665), (1666, 1865), (1866, 2065), (2066, 2265), (2266, 2465), (2466, 2665), (2666, 7665), (7666, 12665), (12666, 42665), (42666, 72665), (72666, 102665), (102666, 132665), (132666, 162665), (162666, 192665), (192666, 222665), (222666, -1)]
 Using 17 attr2 ranges as  [(0, 17), (18, 817), (818, 1617), (1618, 2417), (2418, 3217), (3218, 4017), (4018, 4817), (4818, 5617), (5618, 6417), (6418, 7217), (7218, 8017), (8018, 17017), (17018, 26017), (26018, 35017), (35018, 44017), (44018, 1039017), (1039018, -1)]
-Using 8 attr4/attr5 ranges as  [(-64, -58), (-57, -13), (-12, 32), (33, 77), (78, 122), (123, 167), (168, 212), (213, -1)]
+Using 8 attr3/attr4 ranges as  [(-64, -58), (-57, -13), (-12, 32), (33, 77), (78, 122), (123, 167), (168, 212), (213, -1)]
 ```
 
 Note that for your data, most of the common inputs maybe between 0-2500.
@@ -131,7 +130,7 @@ This may take few iterations and reverse engineering to find optimal ranges to p
 One approach can be to use hit & trial, to ran queries on larger partitions to see time taken ( 4+ seconds in query would mean we need to reduce file size in partition, indicating you need to reduce partition range)
 
 
-### Other key considerations in athena & partitioning
+### Other key considerations
 
 
 1\. Note than we did not use even standard numeric values in partition ranges, such as 0-50, 50-250 and so on. Reason can be to leave a futuristic thought to allow queries on ranges. 
@@ -153,8 +152,7 @@ One approach can be to use hit & trial, to ran queries on larger partitions to s
 5\. Query itself be designed carefully, try to optimize the queries. Use AI to optimize queries, but ensure that you select only required 
    columns and do not scan more data than necessary.
 
-6\. When preparing partitions, you need some temporary storage to collect all calculations for each bearing under a partition.
-   EFS is one option, but based on experience, it turned out to be too costly, S3 was used as temporary shared storage, but you need to delete the temporary files after merging and upload to a destination.
+6\. When preparing partitions, you need some temporary storage to collect all data for each 'key' under a partition. EFS is one option, but based on experience, it turned out to be too costly, S3 was used as temporary shared storage, but you need to delete the temporary files after merging and upload to a destination.
    Using S3 makes the processing little slow ( 5 hours to say 6 hours at most for my case with 250 GB of data), but as compared to EFS cost, when processing itself is one time or infrequent, S3 is the preferred option
 
 7\. Give  a timeout to each query, say if the query expected completion in 2-3 seconds, and it did not complete in 5 seconds - stop querying for status,
