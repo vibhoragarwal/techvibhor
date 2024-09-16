@@ -15,14 +15,6 @@ export function getPostBySlug(slug: string) {
   const fileContents = fs.readFileSync(fullPath, "utf8");
   const { data, content } = matter(fileContents);
 
-  // const processedContent = remark()
-  //   .use(html)
-  //   .use(remarkGfm)
-  //   .use(rehypeHighlight)
-  //   .process(content);
-  // const htmlContent = processedContent.toString();
-
-
   return { ...data, slug: realSlug, content } as Post;
 }
 
