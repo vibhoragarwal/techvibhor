@@ -45,7 +45,8 @@ Assume this is the data format, where for each key element, and for millions of 
 "out_*" output was created and persisted in AWS S3 in zipped files, with hundreds of GBs of data points.
 
 Now for querying, we assume that "attr1..", "attr2..", "attr3.. are always provided in the query, while "attr4.."
-and "attr5.." are optionally provided.
+and "attr5.." are optionally provided. "attr5_str" is another input element, which does not come in query, but is a filter
+in 'where' clause of the query; same with 'out_key1' & 'out_key2' which may or may not be part of where clause.
 
 
  | attr0_str     | attr1_num | attr2_num | attr3_num | attr4_num | attr5_str | out_key1     | out_key2   | 
@@ -63,7 +64,7 @@ Columnar data partitions are more efficient when querying, but if that is applic
 Parquet data format storage was *not explored* in this solution, and generally be considered when designing Athena based solutions
 
 Here we used tabular data strategy.
-In above case, we always receive user input, defined by attr1_num, attr2_num, attr3_num and attr4_num/ attr5_num (optional).
+In above case, we always receive user input, defined by **attr1_num, attr2_num, attr3_num and attr4_num/ attr5_num (optional)**.
 This means, that we could partition our data, to have first mandatory elements and then optional (last partitions).
 
 A good strategy to partition data can be then:

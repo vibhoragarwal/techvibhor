@@ -61,3 +61,10 @@
 .markdown th {
   background-color: #f2f2f2;
 }
+
+.markdown p {
+  text-align: justify;
+}
+.markdown p {
+  margin-right: 2px; /* Adjust the value as needed */
+}
