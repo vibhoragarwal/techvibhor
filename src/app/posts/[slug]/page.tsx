@@ -9,6 +9,11 @@ import Header from "@/app/_components/header";
 import { PostBody } from "@/app/_components/post-body";
 import { PostHeader } from "@/app/_components/post-header";
 
+import {remark} from 'remark';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import html from 'remark-html';
+
 export default async function Post({ params }: Params) {
   const post = getPostBySlug(params.slug);
 
@@ -16,7 +21,17 @@ export default async function Post({ params }: Params) {
     return notFound();
   }
 
-  const content = await markdownToHtml(post.content || "");
+
+  const processedContent = remark()
+  .use(html)
+  .use(remarkGfm) // Add support for GitHub Flavored Markdown (tables, strikethrough, etc.)
+  .use(rehypeHighlight) // Syntax highlighting for code blocks
+  .processSync(post.content || ""); // Use processSync to avoid async issues
+
+  const htmlContent = processedContent.toString();
+
+
+  // const content = await markdownToHtml(post.content || "");
 
   return (
     <main>
@@ -30,7 +45,7 @@ export default async function Post({ params }: Params) {
             date={post.date}
             author={post.author}
           />
-          <PostBody content={content} />
+          <PostBody content={htmlContent} />
         </article>
       </Container>
     </main>
