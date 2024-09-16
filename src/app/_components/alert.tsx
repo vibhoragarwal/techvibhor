@@ -29,14 +29,20 @@ const Alert = ({ preview }: Props) => {
             </>
           ) : (
             <>
-              The source code for this blog is{" "}
+            Follow me at: <span> </span>
               <a
-                href={`https://github.com/vercel/next.js/tree/canary/examples/${EXAMPLE_PATH}`}
+                href={`https://www.linkedin.com/in/vibhoragarwaltechfree/`}
                 className="underline hover:text-blue-600 duration-200 transition-colors"
               >
-                available on GitHub
+               Linkedin   <span> </span> 
               </a>
-              .
+              or at:  <span> </span>
+              <a
+                href={`https://stackoverflow.com/users/7746398/techfree`}
+                className="underline hover:text-blue-600 duration-200 transition-colors"
+              >
+              stackoverflow
+              </a>
             </>
           )}
         </div>
