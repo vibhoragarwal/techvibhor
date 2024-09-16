@@ -45,3 +45,19 @@
   padding: 2px 4px;
   border-radius: 3px;
 }
+
+
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid #ddd;
+  padding: 8px;
+}
+
+.markdown th {
+  background-color: #f2f2f2;
+}
