@@ -30,27 +30,35 @@ Implementing scaling with the below policies to meet above requirements is a cha
 
 
 Link below describe automatic scaling support from ECS.
-https://docs.aws.amazon.com/AmazonECS/latest/developerguide/service-auto-scaling.html
+
+[AWS ECS Auto scaling](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/service-auto-scaling.html)
 
 The default automatic scaling policy support from ECS can increase or decrease the number of tasks that your service runs based on a target value for a specific metric. 
 
-1.	The scale out action based on compute usage spikes, but there would be cases when compute usage is un-predictable, where few requests consume negligible compute but need to parallel processing with others
-2.	Inability to configure the exact number of tasks needed with out-of-the-box basic scaling
-3.	Default scale out takes minutes before application in the container picks requests for processing
-4.	Default scale in takes 5-15 minutes causing wasted compute adding to unnecessary costs. More importantly, the scale-in policy cannot identify & stop the actual idle tasks, just based on compute usage, resulting in stopping active tasks !!
-5.	For the scale-in event, KILL signal sent by ECS expects tasks to complete their job within 30 seconds, which was not possible, depending on the nature of the application.
+1\.	The scale out action based on compute usage spikes, but there would be cases when compute usage is un-predictable, where few requests consume negligible compute but need to parallel processing with others
+
+2\.	Inability to configure the exact number of tasks needed with out-of-the-box basic scaling
+
+3\.	Default scale out takes minutes before application in the container picks requests for processing
+
+4\.	Default scale in takes 5-15 minutes causing wasted compute adding to unnecessary costs. More importantly, the scale-in policy cannot identify & stop the actual idle tasks, just based on compute usage, resulting in stopping active tasks !!
+
+5\.	For the scale-in event, KILL signal sent by ECS expects tasks to complete their job within 30 seconds, which was not possible, depending on the nature of the application.
 
 
 ### Step Scaling Policies
 
 Limitations of basic target-tracking policies drove the need to set up customized step auto-scaling policies based on cloud watch metrics on request count on SQS (possible with both default from ECS or custom metrics.
+
 These policies use Cloud Watch alarms and aggregates metric data points based on the statistic for the metric. On breach of the alarm, the appropriate scaling policy in invoked. 
+
 Step scaling policies are complex and in-capable to decide exact desired count needed. Additionally, Cloud Watch alarms are costly & slow in response. 
+
 The core issues with still slow scaling (out or in) stays un-resolved and the scaling policy cannot find the idle tasks to stop when scaling in, which is the key requirement. Even the advanced customized auto scaling policies can only "approximate" scaling needs.
 
 The link below is an interesting read on how cluster auto scaling works, the complexity and math applied in implementing scaling policy.
 
-https://aws.amazon.com/blogs/containers/deep-dive-on-amazon-ecs-cluster-auto-scaling/
+[AWS ECS Auto scaling Internals](https://aws.amazon.com/blogs/containers/deep-dive-on-amazon-ecs-cluster-auto-scaling/)
 
 
 
@@ -65,25 +73,32 @@ With multiple limitations in what ECS supports by default,  there is a need to b
 An EC2 auto-scaling group can provide capacity to ECS instead of the serverless Fargate option; preferred in certain scenarios such as:
 
 a.	ECS Fargate does not support exceptionally large compute (up-to 16 vCPUs now)
+
 b.	The image caching feature of container is another valuable proposition when using ECS with EC2, especially when images are large. Currently, Fargate does not offer container image caching feature. This allows single EC2 to run multiple instances of the container but downloading the container image only once for that EC2.
+
 c.	EC2 warm-up pool saves on instance provisioning times unlike Fargate instances
+
 d.	Need for more control over infrastructure, for example, specific OS configuration.
 
 Extend solution to support ECS with EC2, to simultaneously update auto-scaling group (ASG) configured as the "capacity provider" to ECS service. This is more complex to design & configure.
 
 ### Solution Components & Configuration
 
-1.	AWS ECS runs application container on Fargate or uses auto-scaling group (ASG) as the "capacity provider"
-2.	An event bridge bus with a set of rules intercepts the scaling event and triggers a lambda (target) which runs ECS scaling logic, referred now as ecs-scaling-lambda
-3.	ecs-scaling-lambda's environment is prepared with required properties to talk to AWS such as queue name, ECS cluster & service details, min/max desired count. With ASG,  attributes such as per EC2 capacity, min/max ASG count.
-4.	Configure ecs-scaling-lambda as ASG custom termination policy (for ECS with EC2). Per documentation Amazon EC2 Auto Scaling uses termination policies to prioritize which instances to terminate first when decreasing the size of your Auto Scaling group (referred to as scaling in). However, this works fine even to stop EC2 to return them to the warm pool.
-5.	Design lambda to respond to scale up and scale down events. Additionally, configure lambda to respond to auto-scaling service scale-down event, with the list of EC2 to stop (needed when ASG is the "capacity provider")
+1\.	AWS ECS runs application container on Fargate or uses auto-scaling group (ASG) as the "capacity provider"
+
+2\.	An event bridge bus with a set of rules intercepts the scaling event and triggers a lambda (target) which runs ECS scaling logic, referred now as ecs-scaling-lambda
+
+3\.	ecs-scaling-lambda's environment is prepared with required properties to talk to AWS such as queue name, ECS cluster & service details, min/max desired count. With ASG,  attributes such as per EC2 capacity, min/max ASG count.
+
+4\.	Configure ecs-scaling-lambda as ASG custom termination policy (for ECS with EC2). Per documentation Amazon EC2 Auto Scaling uses termination policies to prioritize which instances to terminate first when decreasing the size of your Auto Scaling group (referred to as scaling in). However, this works fine even to stop EC2 to return them to the warm pool.
+
+5\.	Design lambda to respond to scale up and scale down events. Additionally, configure lambda to respond to auto-scaling service scale-down event, with the list of EC2 to stop (needed when ASG is the "capacity provider")
 
 
 ### Solution Architecture
 
  
- ![Architecture]( "/assets/blog/ecs-custom-scaling/custom_autoscaling.png")  
+ ![This Solution's Architecture](/assets/blog/ecs-custom-scaling/custom_autoscaling.png)  
 
 
 
@@ -94,7 +109,9 @@ Extend solution to support ECS with EC2, to simultaneously update auto-scaling g
 The lambda handler function responds to these event types 
 
 a.	Scale up for new requests
+
 b.	Scale down when task shuts down 
+
 c.	Respond to ASG scale-down event with the idle instance-ids to stop.
 
 ```python 
@@ -296,34 +313,48 @@ def scale_down_asg():
 
 ```
 
+
 ## Design Considerations
 
-1.	To accurately read the pending request count on SQS, use "FIFO" queue  and not "STANDARD" queue which "almost" guarantees accuracy (with slight delays seen up-to one second) in synchronizing the queue attributes. Scaling lambda waits & reads queue attributes after a second of the request made.
-2.	Run scaling lambda with a reserved concurrency of one to avoid concurrent updates on the ECS service from multiple scaling events received at the same time. The ecs-scaling-lambda responds very quickly to the events, and a fixed concurrency of one adds negligible overhead.
-3.	The capacity provider considered in design is 100% by either FARGATE or by EC2. Mixing "capacity provider" types would result in un-desired behavior.
-4.	If using ASG as the "capacity provider" use the placement strategy binpack. This leaves  the least amount of unused CPU or memory. This strategy minimizes the number of container instances in use. Additionally, start with using no placement constraints. Turn off "instances protected from scale-in" on ASG, for the custom scaling to work.
-5.	The capacity provider should still have "ecs managed scaling" turned on. Reason - If the scaling is "managed" by ECS, the ECS service waits for EC2s to come up and does not fail the tasks at once due to lack of available instances.
+1\. To accurately read the pending request count on SQS, use "FIFO" queue  and not "STANDARD" queue which "almost" guarantees accuracy (with slight delays seen up-to one second) in synchronizing the queue attributes. Scaling lambda waits & reads queue attributes after a second of the request made.
+
+2\. Run scaling lambda with a reserved concurrency of one to avoid concurrent updates on the ECS service from multiple scaling events received at the same time. The ecs-scaling-lambda responds very quickly to the events, and a fixed concurrency of one adds negligible overhead.
+
+3\. The capacity provider considered in design is 100% by either FARGATE or by EC2. Mixing "capacity provider" types would result in un-desired behavior.
+
+4\. If using ASG as the "capacity provider" use the placement strategy binpack. This leaves  the least amount of unused CPU or memory. This strategy minimizes the number of container instances in use. Additionally, start with using no placement constraints. Turn off "instances protected from scale-in" on ASG, for the custom scaling to work.
+
+5\. The capacity provider should still have "ecs managed scaling" turned on. Reason - If the scaling is "managed" by ECS, the ECS service waits for EC2s to come up and does not fail the tasks at once due to lack of available instances.
 Also, turn off managed termination protection for the capacity provider.
 Delete any lifecycle hooks on ASG that may intervene with the custom scaling service & add overhead.
-6.	If using ASG, use ASG warm pool to save on time (turn on reuse on scale-in), to provision new instances.
-7.	For improved performance, remember to re-use cached AWS connections in the lambda for improved performance & throughout your application
+
+6\. If using ASG, use ASG warm pool to save on time (turn on reuse on scale-in), to provision new instances.
+
+7\. For improved performance, remember to re-use cached AWS connections in the lambda for improved performance & throughout your application
 
 
 
 ## More Ideas
 
-1.	Before sending requests for processing, a trusted client can ask for capacity up front. Integrated with ecs-scaling-lambda, increment ECS desired count for the "expected" demand as asked by a smart client.
-2.	With automated deployments, a new deployment would replace tasks & may shut down "active" processes, which is un-desired. Abort deployment if ECS is busy processing, by querying ECS desired/pending count to check if scaling is in progress & by querying cloud watch log activity from the container.
-3.	To capture scaling metrics, persist ECS desired count update actions in a timestream database. One use case could be to see ECS scaling status and analyze in real-time how busy the system is.
-4.	Asynchronous invocation of ecs-scaling-lambda means errors may go un-noticed. Configure destinations on ecs scaling lambda to be able to send out SNS email notifications on failed invocations.
+1\.  Before sending requests for processing, a trusted client can ask for capacity up front. Integrated with ecs-scaling-lambda, increment ECS desired count for the "expected" demand as asked by a smart client.
+
+2\.  With automated deployments, a new deployment would replace tasks & may shut down "active" processes, which is un-desired. Abort deployment if ECS is busy processing, by querying ECS desired/pending count to check if scaling is in progress & by querying cloud watch log activity from the container.
+
+3\.  To capture scaling metrics, persist ECS desired count update actions in a timestream database. One use case could be to see ECS scaling status and analyze in real-time how busy the system is.
+
+4\.  Asynchronous invocation of ecs-scaling-lambda means errors may go un-noticed. Configure destinations on ecs scaling lambda to be able to send out SNS email notifications on failed invocations.
 
 
 ## Solution Benefits
 
-The solution is highly scalable, fast, re-usable, robust, and cost-effective for any AWS ECS deployment that needs to scale.
+1\. The solution is highly scalable, fast, re-usable, robust, and cost-effective for any AWS ECS deployment that needs to scale.
 
-1.	Lambda itself is serverless pay-as-you-go service and runs with minimal compute (128 MB) to avoid costs & overhead of other components such as Cloud watch metrics & alarms or other resources
-2.	Control exact desired count on ECS service. Custom calculation logic allows maximum control over updates on desired task count. For instance, can start say 10% or 4 more tasks to keep few instances warmed up.
-3.	Event bridge is fast and within few hundred milliseconds of the scaling event, lambda can process it to update ECS, as compared against at least two minutes delay with out-of-the-box scaling solution. This means extremely fast response to scaling events. For the scale-up events, updates on desired count of ECS is immediate. With FARGATE, the tasks would start provisioning at once and with EC2 "capacity provider", the EC2 would start also provisioning at once. 
-4.	The container can reliably run for as long as possible, even days, and can save considerable costs by shutting down with just few seconds of idle time (the logic within container as described). The solution gives complete control to the application on how long it wants to run, when it is idle.
-5.	Simple solution that does not use any of the ECS target tracking, step scaling or other custom metrics-based policies.
+2\.	Lambda itself is serverless pay-as-you-go service and runs with minimal compute (128 MB) to avoid costs & overhead of other components such as Cloud watch metrics & alarms or other resources
+
+3\.	Control exact desired count on ECS service. Custom calculation logic allows maximum control over updates on desired task count. For instance, can start say 10% or 4 more tasks to keep few instances warmed up.
+
+4\.	Event bridge is fast and within few hundred milliseconds of the scaling event, lambda can process it to update ECS, as compared against at least two minutes delay with out-of-the-box scaling solution. This means extremely fast response to scaling events. For the scale-up events, updates on desired count of ECS is immediate. With FARGATE, the tasks would start provisioning at once and with EC2 "capacity provider", the EC2 would start also provisioning at once. 
+
+5\.	The container can reliably run for as long as possible, even days, and can save considerable costs by shutting down with just few seconds of idle time (the logic within container as described). The solution gives complete control to the application on how long it wants to run, when it is idle.
+
+6\.	Simple solution that does not use any of the ECS target tracking, step scaling or other custom metrics-based policies.

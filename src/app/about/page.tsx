@@ -37,6 +37,12 @@ export default async function About() {
         Download Resume
       </h2>
       </Link>
+
+      <Link href="https://www.linkedin.com/in/vibhoragarwaltechfree/" target="_blank">
+    <h2 className="mb-8 text-xl md:text-2xl font-bold tracking-tighter leading-tight hover:underline">
+       Linkedin
+      </h2>
+      </Link>
       </div>
       </Container>
     </main>
