@@ -4,7 +4,7 @@ excerpt: "There are multiple use cases to containerize and host proprietary appl
 
 Scaling ECS then is one of the key needs of any application. This article describes challenges with ECS supported scaling and describes a custom solution to alleviate them."
 coverImage: "/assets/blog/ecs-custom-scaling/custom_autoscaling.png"
-date: "2024-08-16T15:35:07.322Z"
+date: "2023-12-16T15:35:07.322Z"
 author:
   name: Vibhor Agarwal
   picture: "/assets/blog/authors/techvibhor.png"

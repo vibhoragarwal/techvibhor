@@ -11,6 +11,7 @@ export function Footer() {
           </h1>
           <a
               href={`https://github.com/vercel/next.js/blob/canary/license.md`}
+              target="_blank"
               className="mx-3 font-bold hover:underline"
             >
             Next.js Template License
@@ -24,6 +25,7 @@ export function Footer() {
             </a> */}
             <a
               href={`https://www.linkedin.com/in/vibhoragarwaltechfree/`}
+              target="_blank"
               className="mx-3 font-bold hover:underline"
             >
               Connect @LinkedIn

@@ -2,20 +2,20 @@
 title: "AWS Athena - Partitioning tips when building Data Lake with Tabular numeric data"
 excerpt: "When dealing with tabular data spread, how do you partition data for optimal cost-optimized, fast and scalable
 querying ?"
-coverImage: "/assets/blog/aws-athena/aws-athena.png"
-date: "2024-09-01T15:35:07.322Z"
+coverImage: "/assets/blog/aws-athena/athena_blog.png"
+date: "2024-07-07T15:35:07.322Z"
 author:
   name: Vibhor Agarwal
   picture: "/assets/blog/authors/techvibhor.png"
 ogImage:
-  url: "/assets/blog/aws-athena/aws-athena.png"
+  url: "/assets/blog/aws-athena/athena_blog.png"
 
 ---
 
 
 ## Summary 
 
-This blog describes some key aspects & learnings from experience working with AWS Athena.
+This blog details few key learnings from experience working with AWS Athena.
 Some learnings are on top of best practices, and deal with tabular data processing use case specifically.
 
 
@@ -30,23 +30,21 @@ Read AWS documentation for details on how this service works, and come back here
 
 ## Partitioning data
 
-Basic premise that Athena works efficiently on is to limit the size of data to scan, to read desired results.
+Basic premise that Athena works efficiently on is to limit the size of data to scan, to query desired results.
 
-When the query conditions are known, instead of querying a large file in GBs, partition it, to direct your queries to query on smaller file sets and be faster.
+When the query conditions (clauses) are known, instead of querying a large file in GBs, partition it, to direct your queries to query on smaller file sets and be faster.
 
 Hive partitions are supported in S3 and can be used to partition data with a partition key as a query parameter and value as a data field that seems fit.
 
-Now partitioning depends on use case itself, and mandatory attributes in your query to Athena which can decide partition keys.
+Now partitioning strategy depends on use case itself, and mandatory attributes in your query to Athena which can decide partition keys.
 
 
 ## Raw data format to be partitioned
 
-Assume this is the data format, where for each key element, and for millions of combinations of "attr1_*" input data, 
-"out_*" output was created and persisted in AWS S3 in zipped files, with hundreds of GBs of data points.
+Assume this is the data format, where for each key element, and for millions of combinations of "attr1_*" input data, "out_*" output was created and persisted in AWS S3 in zipped files, with hundreds of GBs of data points.
 
-Now for querying, we assume that "attr1..", "attr2..", "attr3.. are always provided in the query, while "attr4.."
-and "attr5.." are optionally provided. "attr5_str" is another input element, which does not come in query, but is a filter
-in 'where' clause of the query; same with 'out_key1' & 'out_key2' which may or may not be part of where clause.
+Now for querying, assume that "attr1..", "attr2..", "attr3.. are always provided in the query, while "attr4.."
+and "attr5.." are optionally provided. Assume 'attr5_str', 'out_key1' & 'out_key2' which may or may not be part of where clause.
 
 
  | attr0_str     | attr1_num | attr2_num | attr3_num | attr4_num | attr5_str | out_key1     | out_key2   | 
@@ -60,12 +58,12 @@ in 'where' clause of the query; same with 'out_key1' & 'out_key2' which may or m
 
 ## Partitioning strategy
 
-Columnar data partitions are more efficient when querying, but if that is applicable depends on the data itself.
-Parquet data format storage was *not explored* in this solution, and generally be considered when designing Athena based solutions
+Columnar data partitions are more efficient when querying, but if that is applicable, depends on the data itself.
+Parquet data format storage was *not explored* in this solution, and generally should also be considered when designing Athena based solutions.
 
-Here we used tabular data strategy.
-In above case, we always receive user input, defined by **attr1_num, attr2_num, attr3_num and attr4_num/ attr5_num (optional)**.
-This means, that we could partition our data, to have first mandatory elements and then optional (last partitions).
+Here used tabular data strategy.
+In above case, application always receive user input, defined by **attr1_num, attr2_num, attr3_num and attr4_num/ attr5_num (optional)**.
+This means that data can be partitioned to have first mandatory elements and then optional (last partition).
 
 A good strategy to partition data can be then:
 
@@ -80,7 +78,7 @@ Example:
 results/attr1_num=0-10/attr2_num=0-9/attr3_num=0-18/attr4_num=31-43/attr5_num=31-53/tabular_data_file.csv
 ```
 
-This means, when client app is looking for 'key_element' with input data set of :
+This means, when calling app is looking for 'key_element' with input data set of :
 
 
 ```
@@ -89,7 +87,7 @@ attr1_num=7,attr2_num=0, attr3_num=12, attr4_num=attr5_num=40
 
 then above partition will be queried (by Athena by having right where clauses in SQL) for files to read all 'key_element' for the input data.
 
-If the client is looking for 'key_element' with input set of : *attr1_num=7,attr2_num=0, attr3_num=12* ( with no attr4_num/attr5_num ), Athena query would scan all the files under partition *"attr1_num=0-10/attr2_num=0-9/attr3_num=0-18"* - for each sub partition under this.
+If the caller is looking for 'key_element' with input set of : *attr1_num=7,attr2_num=0, attr3_num=12* ( with no attr4_num/attr5_num ), Athena query would scan all the files under partition *"attr1_num=0-10/attr2_num=0-9/attr3_num=0-18"* - for each sub partition under this.
 
 Athena does this in parallel, not sequentially and querying without *'attr4/attr5'* would not make much negative impact in performance.
 
@@ -104,8 +102,8 @@ Below are some tips and learnings on how to strategize partitioning.
 It would always take some study to analyze the data and see how best the partitioning could be to have an optimal number of partitions with not too large or too small files. Note that querying is priced based on data scanned and querying time.
 
 AWS recommends (seen somewhere, experienced also) a file size of 128 MB, but it can be smaller.
-Note than more data we scan, more we pay and more we add latency in the query.
-This means, we need to balance number of partitions ( too many would be overhead for athena to first identify the right partition to look into)
+Note than more data you scan, more you pay and add more latency when querying.
+This means, you need to balance number of partitions ( too many would be overhead for athena to first identify the right partition to look into)
 and size of file in each partition ( some partitions having few KBs while some having 800 MB is imbalance, while 1 MB to 100 MB in each partition could be optimal)
 
 Partitions can look like this:
@@ -121,8 +119,8 @@ See the 'attr1 ranges' above : they are split with ranges of 200 until 2665 and 
 
 Reason is that you expected lesser data for very high 'attr1' input, so increase the ranges as above, to avoid ending up having very small sized files.
 
-At the same time, we have very lower ranges for frequently used & supported 'attr1' inputs to avoid a larger range which then ends up having large files.
-It depends on the data that we are trying to partition !
+At the same time, you have very lower ranges for frequently used & supported 'attr1' inputs to avoid a larger range which then ends up having large files.
+It depends on the data that you are trying to partition !
 
 Same philosophy applies for subsequent attributes; and together, arrive at an optimal partition count and a reasonable file size in each partition.
 This may take few iterations and reverse engineering to find optimal ranges to partition data and see how data spans out
@@ -135,12 +133,12 @@ One approach can be to use hit & trial, to ran queries on larger partitions to s
 
 
 1\. Note than we did not use even standard numeric values in partition ranges, such as 0-50, 50-250 and so on. Reason can be to leave a futuristic thought to allow queries on ranges. 
-   If client app says that "attr1_num" is "around 50", we might want to add tolerance of +-10% and query for 45  to 55 range, right ?
-   Doing so, we would most probably still hit one single partition, and reduce the hops in partition and number of files scanned
+   If client app says that "attr1_num" is "around 50", you might want to add tolerance of +-10% and query for 45  to 55 range, right ?
+   Doing so, query would most probably still hit one single partition, and reduce the hops in partition and number of files scanned
 
 2\. Try to keep optimal size of data where athena queries run; in the first version of my real project, we reduced ~200GB of data to 15 GB of data, 
    keeping only required attributes. Less amount of data scan means less cost and higher speeds. Also keeping only needed data in S3 in STANDARD tier as there is S3 storage cost,
-   we do not want to keep redundant data forever, which in long run would be costly.
+   you do not want to keep redundant data forever, which in long run would be costly.
 
 3\. "When Athena reads data, it assigns different ranges of files to different nodes, to maximize parallel processing of the data. Each range is known as a split and files that can be read in parallel are called splittable"
    It was observed by experiments, that about 10-50 MB of a file size is optimal, bigger files have more latency to process. Note that too small files, 20KB for example, would
@@ -164,9 +162,9 @@ One approach can be to use hit & trial, to ran queries on larger partitions to s
    can be 2-5 seconds in this application. Stats can be  collected and produced in API response (recommended for easier trace of performance bottlenecks).
 
 9\. Continued, Athena provides options for provisioned capacity, but that is minimum 4 DPU (1 DPU=4 VCPU); if you do not need 16 vCPU for your app, you should keep no 
-   provisioned capacity to save on redundant compute.  This option is good where we have say 15-20 Athena based applications in our system.
+   provisioned capacity to save on redundant compute.  This option is good where you have say 15-20 Athena based applications in our system.
 
-10\. Continued, Athena serverless can be warmed up by firing a simple query (SELECT A from DB.TABLE LIMIT 1) just before we expect client to do actual querying. 
+10\. Continued, Athena serverless can be warmed up by firing a simple query (SELECT A from DB.TABLE LIMIT 1) just before you expect client to do actual querying. 
    This will make Athena spin up compute and hopefully, keep it warmed up until the real query is fired (of course not guaranteed but this technique is quite effective
    for example, with heavy lambda functions)
 
@@ -189,3 +187,24 @@ One approach can be to use hit & trial, to ran queries on larger partitions to s
 14\. If your use case needs, you can cache Athena query results for upto 7 days
 
 15\. Use AWS pricing calculator to get approximate cost depending on system load and amount of data scanned (average) per query.
+
+16\. Remember that when you re-configure partitions in an existing table, old partitions will **not** be removed; new ones will be added/merged (not clear)
+   This means, always re-create the Athena tables and then partition the table; conflicting partition changes in the sam
+  
+   **when working on partitions and data processing from scratch iteratively**
+
+    - destroy and create tables again, with your Infra as Code
+    - clean up S3 data for data that is built
+    - run your data processing workflow to partition and create data in S3 ( which is cleaned up already )
+    - this workflow can load the partitions by calling right command at the end (new tables ensure only fresh new set of partitions would be loaded)
+   
+   **when database is stabilized**
+
+    - you do not need to destroy and create tables again, you can just keep the step to create tables  again. Destroy would delete the partitions.
+   
+
+   This means that partitions need to be re-loaded either manually using Athena console, or programmatically when new data is created.
+
+17\. Use query analyzer on Athena console to check the time for running the query and also time taken to allot compute for execution of the query. 
+
+18\. AWS CDK has good support for building Athena database/tables.

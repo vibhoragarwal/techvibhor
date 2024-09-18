@@ -32,6 +32,7 @@ const Alert = ({ preview }: Props) => {
             Follow me at: <span> </span>
               <a
                 href={`https://www.linkedin.com/in/vibhoragarwaltechfree/`}
+                target="_blank"
                 className="underline hover:text-blue-600 duration-200 transition-colors"
               >
                Linkedin   <span> </span> 
@@ -39,6 +40,7 @@ const Alert = ({ preview }: Props) => {
               or at:  <span> </span>
               <a
                 href={`https://stackoverflow.com/users/7746398/techfree`}
+                target="_blank"
                 className="underline hover:text-blue-600 duration-200 transition-colors"
               >
               stackoverflow
