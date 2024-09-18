@@ -7,7 +7,7 @@ export function Footer() {
       <Container>
         <div className="py-20 flex flex-col lg:flex-row items-center">
           <h1 className="text-xl lg:text-[1.5rem] font-bold tracking-tighter leading-tight text-center lg:text-left mb-10 lg:mb-0 lg:pr-4 lg:w-1/2">
-          Content Copyright (c) 2024 Vibhor Agarwal
+          Blog Content Copyright (c) 2024 Vibhor Agarwal
           </h1>
           <a
               href={`https://github.com/vercel/next.js/blob/canary/license.md`}
