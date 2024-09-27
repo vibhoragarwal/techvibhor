@@ -32,7 +32,7 @@ export default async function About() {
         dangerouslySetInnerHTML={{ __html: content_html }}
       />
    
-    <Link href="/VibhorResume 1.4.pdf" target="_blank">
+    <Link href="/VibhorResume 1.5.pdf" target="_blank">
     <h2 className="mb-8 text-xl md:text-2xl font-bold tracking-tighter leading-tight hover:underline">
         Download Resume
       </h2>
