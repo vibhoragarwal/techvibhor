@@ -1,13 +1,13 @@
 ---
 title: "Collecting custom API usage data for analytics asynchronously on AWS"
 excerpt: "When you have custom API metrics to collect in a latency sensitive application, how do you design your architecture on AWS ?"
-coverImage: "/assets/blog/api_analytics/analytics.png"
+coverImage: "/assets/blog/api_analytics/analytics_title.png"
 date: "2024-09-15T15:35:07.322Z"
 author:
   name: Vibhor Agarwal
   picture: "/assets/blog/authors/techvibhor.png"
 ogImage:
-  url: "/assets/blog/aws-athena/analytics.png"
+  url: "/assets/blog/aws-athena/analytics_title.png"
 
 ---
 
@@ -254,7 +254,28 @@ Implement your own logic to create a single record with measure. Key points here
         }]
     ```
 
-   c. capture exception when write fails
+   c. prepare common attributes
+
+     ```python
+       def prepare_common_attributes(payload: dict) -> dict:
+       """prepare common attributes for timestream such as dimensions, measure
+       name and type as MULTI
+       Args:
+           payload: dict of user data
+   
+       Returns:
+           dict
+       """
+       return {
+           'Dimensions': [
+               {'Name': 'api', 'Value': payload["request_url"]}
+           ],
+           'MeasureName': 'input_output',
+           'MeasureValueType': 'MULTI'
+       }
+     ```
+
+   d. capture exception when write fails
 
 
     ```python
