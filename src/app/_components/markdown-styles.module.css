@@ -33,18 +33,6 @@
   margin-left: 20px;
 }
 
-.markdown pre {
-  background: #f5f5f5;
-  padding: 10px;
-  border-radius: 5px;
-  overflow-x: auto;
-}
-
-.markdown code {
-  background: #f5f5f5;
-  padding: 2px 4px;
-  border-radius: 3px;
-}
 
 
 .markdown table {
