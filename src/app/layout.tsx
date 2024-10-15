@@ -10,12 +10,15 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  // title: `Next.js Blog Example with ${CMS_NAME}`,
   title: `Vibhor Agarwal's Blog`,
-  // description: `A statically generated blog example using Next.js and ${CMS_NAME}.`,
   description: `Vibhor Agarwal's Blog Site`,
   openGraph: {
-    images: ['/assets/blogs/authors/techvibhor.png'],
+    images: [{
+        url: '/assets/blog/authors/techvibhor.png',
+        width: 800,
+        height: 600,
+        alt: 'Vibhor Agarwal',
+      }],
   },
 };
 
@@ -27,6 +30,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+
         <link
           rel="apple-touch-icon"
           sizes="180x180"
@@ -50,6 +54,7 @@ export default function RootLayout({
           href="/favicon/safari-pinned-tab.svg"
           color="#000000"
         />
+
         <link rel="shortcut icon" href="/favicon/favicon.ico" />
         <meta name="msapplication-TileColor" content="#000000" />
         <meta

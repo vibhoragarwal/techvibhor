@@ -1,5 +1,5 @@
 ---
-title: "All about Microsoft Bot Framework (Python), Azure Deployment and streaming content and  for GenAI apps"
+title: "All about Microsoft Bot Framework (Python), Streaming Content & Azure Deployment for GenAI powered Chatbots"
 excerpt: "Building a teams bot with Python Microsoft Bot framework is challenging. Here is an end to end guide to follow."
 coverImage: "/assets/blog/microsoft_bot/microsoft_bot_title.png"
 date: "2024-09-12T15:35:07.322Z"
@@ -18,11 +18,11 @@ When creating chatbots with Microsoft based technologies, there are few consider
 
 https://learn.microsoft.com/en-us/microsoftteams/playbook/technology-choices/pvavsazurebot
 
-* Microsoft offers two different technologies for building chatbot solutions: Azure AI Bot Services (formerly known as Azure Bot Framework), a traditional software SDK,
-and Microsoft Copilot Studio, a modern low-code approach for building chatbots.*
+Microsoft offers two different technologies for building chatbot solutions: **Azure AI Bot Services (formerly known as Azure Bot Framework)**, a traditional software SDK,
+and **Microsoft Copilot Studio**, a modern low-code approach for building chatbots.
 
 When comparing with Copilot studio, a low code platform, when requiring higher level of customizations & control, and when need to integrate with teams,
-Azure Bot services are the preferred option. It seems Copilot has more focus from Microsoft as of now, and is possible in future that copilot
+**Azure Bot services** are the preferred option. It seems **Copilot** has more focus from Microsoft as of now, and is possible in future that Copilot
 offers the missing features that are there today on Azure Bot. Keep an eye on developments here.
 
 *Microsoft Bot Framework and Azure AI Bot Service are a collection of libraries, tools, and services that let you build, test, deploy,
@@ -31,10 +31,13 @@ With this framework, developers can create bots that use speech, understand natu
 
 We will take example of a sample Python bot build with Microsoft Bot Framework and then understand the components, improve it, enhance it
 and finally understand deployment on Azure.
+
 A bot is nothing but a web application hosting APIs that client (such as teams or chat interface) can talk to.
 But has additional capabilities to handle messaging, maintaining user conversations and state, allowing concurrent request handling, messaging life cycle,
 integration with Cloud, interceptors/middleware when working with messages, sending cards such as to collect feedback from user, multichannel support etc.
+
 Microsoft SDK for Bot will provide these services, and is supported in C#, Java, Typescript and Python.
+
 All frameworks may not have equal functionality and may differ in terms of support. C# is the preferred option and is expected to be kept up-to-date by Microsoft
 , but this guide would use Python Bot framework SDK.
 
@@ -42,7 +45,7 @@ All frameworks may not have equal functionality and may differ in terms of suppo
 ## Objective
 
 When working with Microsoft Bot framework in Python, several challenges were seen w.r.to SDKs, documentation and commonly used features.
-This article attempts to describe and provide solutions for those, including deployment on Azure.
+This article attempts to describe and provide solutions for each of them, and also describes deployment on Azure, for newbies.
 
 
 ## Take this sample from Microsoft and improve it
@@ -51,7 +54,7 @@ This is what you should be already aware of, at least a bit !
 
 [Microsoft Bot Framework](https://learn.microsoft.com/en-us/azure/bot-service/index-bf-sdk?view=azure-bot-service-4.0)
 
-Here is the sample, take any
+Here is the sample, take any sample, we would customize it.
 
 [Echo Bot](https://github.com/microsoft/BotBuilder-Samples/tree/main/samples/python/02.echo-bot)
 
@@ -61,18 +64,21 @@ You can run the bot locally by installing an emulator:
 
 
 **app.py** is the entry point to run the bot. You would check out the code, create a virtual env (python 3.11), activate it,  install required dependencies
-and then run :
+and then run   
 
     python3 app.py
 
 Now access the emulator and use the local running server's link : http://localhost:3978/api/messages to talk to back end via emulator interface.
+Once have this working, continue reading.
 
 
 ## What are we going to do next
 
-Well, a basic bot is useless unless we build a full fledge app and deploy on cloud.
-We can deploy this probably on any cloud as the deployment is nothing but a web app (on AWS can be run on ECS Fargate, on Azure as App Service -> WebApp)
-But you still need the Azure Bot Service to complete the deployment.
+Well, a basic bot is useless unless we build a full fledge app and deploy it on cloud.
+
+We can deploy this probably on any cloud as the deployment is nothing but a **web app** (on AWS can be run on ECS Fargate, on Azure as App Service -> WebApp)
+But you still need the **Azure Bot Service** as the middleware to complete the deployment; this servie would integrate with the user channels while using **web app** as the
+chat messaging end point. The **web app** can then have any logic to respond to user queries.
 
 Here are our requirements:
 
@@ -80,12 +86,12 @@ Here are our requirements:
  - integrate bot with back end API that would actually serve user queries
  - handle exceptions from BOT as well as the back end API gracefully
  - deploy bot on Azure as web app + deploy Azure bot service
- - fix SDK issues that were experienced with this **not so good** framework
- - some tests around the bot (will leave up to you to use **pytest** and add)
- - use python 3.11
- - robust persistence of user state (state management) on Azure Cosmos
- - streaming (does not work but here we show a workaround solution)
- - understand web app and bot service deployment
+ - fix SDK issues that were experienced with this **not so robust** framework
+ - some tests around the bot (will leave up to you to use **pytest** and add them)
+ - use python 3.11 (instead of default provided in sample)
+ - robust persistence of user state (state management) on Azure Cosmos (you can use Blob)
+ - streaming (does not really work in an ideal case but here we implement a workaround *working** solution)
+ - understand & implement web app and bot service deployment
 
 
 
@@ -94,11 +100,13 @@ Here is the architecture that we try to build:
 ![microsoft_bot.png](/assets/blog/microsoft_bot/microsoft_bot.png)
 
 A bot is nothing but an API hosted on Azure App service (as web app) in this example.
-The API needs a framework to be able to use tools to build, test, and connect bots that interact naturally with users, wherever they are.
-Microsoft Bot Framework provides that. We will use Python verison.
 
-Though we would not create a teams channel, a user on teams channel woud connect with Azure Bot service which will talk to the web app that we would build.
-The web app would connect with Cosmos for state management, and will need an App Service plan that can provide compute to it.
+The API needs a framework to be able to use tools to build, test, and connect bots that interact naturally with users, wherever they are.
+Microsoft Bot Framework provides that. We will use Python SDK.
+
+
+Though we would not create a teams channel, a user on teams channel would connect with **Azure Bot service** which will talk to the web app that we would build.
+The web app would connect with Cosmos for state management, and will need an **App Service plan** that can provide compute to it.
 Azure Bot service has the capability to connect several channels to the Bot and acts as a middleware.
 This is a special service on Azure under "Microsoft.BotService/botServices".
 
@@ -111,7 +119,6 @@ Below code extracts will give you more than boilerplate code and fixes to model 
 
 requirements.txt [contents below]
 
-
       botbuilder-core
       aiohttp
       botbuilder-integration-aiohttp
@@ -123,7 +130,8 @@ We will use async programming as much as we can.
 
 Here notice we do not have versions for dependencies; reason is to keep the app up to date with latest versions, patches and fixes for subsequent deployments.
 
-'python-dotenv' is to load configuration from **.env** file which we will keep locally containing confidential info.
+'python-dotenv' is to load configuration from **.env** file which we will keep locally containing confidential info such as credentials to **Azure Cosmos** or
+**back end API**. This should ideally go into **Azure Key Vault** but we can for now, configure them on **Azure App Service** environment.
 
 When you deploy this as web app to Azure, ".env" file would not be deployed, instead the 'python-dotenv' would try to look up
 in the environment settings of the web app deployment on Azure to fetch these attributes.
@@ -139,13 +147,17 @@ requirements-test.txt [contents below]
       aioresponses
       pytest-asyncio
 
-You can run this file on your venv which installs the test dependencies also on local virtual env so that you can run your tests from your IDE or CLI.
+You can run this file:
+
+      pip install -r requirements-test.txt
+
+on your venv (create with **python 3.11**) which installs the test dependencies also on local virtual env so that you can run your tests from your IDE or CLI.
 But when deploying **requirements.txt** file would be used and dependencies installed. This means we can avoid installing redundant testing dependencies
-on actual deployment when tests are to be run locally on 'deploying environment' and not at runtime of the app.
+on actual deployment when tests are to be run locally on 'deploying environment' and not at runtime of the app !
 
 ### Back end API exception & response handler
 
-Since we would use a back end API that does the actual answering of our queries, we need to handle API exceptions/response; build a holder.
+Since we would use a back end API that does the actual answering of our queries, we need to handle API exceptions/response; build classes for them.
 
 ```python
 
@@ -167,10 +179,11 @@ class APIResponse():
 
 A defect seen in framework was - when 'typing' is used to show users of their request being processed and processing (any code in the bot) fails or any reason, the 'typing' activities
 are still thrown to bot interface and is never stopped even when communication has actually stopped.
+
 A success scenario has no issue.
 
 An ingenious way to overcome this defect is to override the default **ShowTypingMiddleware** by copying original code and fixing it.
-The fix is just to warp the bot's execution logic's call in a try-finally, to be able to clear the timer to sotp it !
+The fix is just to warp the bot's execution logic's call in a try-finally, to be able to clear the timer to stop it !
 
 ```python
 
@@ -258,9 +271,12 @@ class CustomShowTypingMiddleware(ShowTypingMiddleware):
 ### User state persistence 
 
 Since we deploy this on Azure, we need a robust storage for user state.
+
 In the sample you checked out, user state is persisted in memory. If your deployment is running for long time, memory would be filled and is not a good option for persistence and scalbility
-We cna use Azure Cosmos DB (we added dependencies already). This library will take care of storing the state in Cosmos and reading it when needed; all what we need
-is to give it a Cosmos DB connection. This comes in 2 flavours - serverless mode and provisioned throughput. Short summary from AI:
+
+We can use Azure Cosmos DB (we added dependencies already). This library will take care of storing the state in Cosmos and reading it when needed; all what we need
+is to give it a Cosmos DB connection. 
+Cosmos comes in 2 flavours - serverless mode and provisioned throughput. Short summary from AI:
 
     - Serverless: This option is ideal for workloads with intermittent or unpredictable traffic.
       You are charged only for the request units (RUs) consumed by your database operations and the storage used.
@@ -271,7 +287,8 @@ is to give it a Cosmos DB connection. This comes in 2 flavours - serverless mode
       Billing is based on the amount of throughput you provision, regardless of actual usage.
 
 With PTU, the cosmos library has no issue. With the serverless option, client cannot set a throughput on the storage.
-SDK has a defect where it always use **throughput=400** which makes the Cosmos calls fail !
+SDK has a defect where it always uses **throughput=400** which makes the Cosmos calls fail !
+
 The fix along with the entire implementation is below. You need to set the environment for the Cosmos connection.
 
 ```python
@@ -335,13 +352,16 @@ async def get_cosmos_storage() -> Storage:
 ### Conversation state persistence
 
 You can implement this on similar lines, but ideally if you have a stateless back end API that probably uses a LLM to generate responses, your back end should
-maintain the conversational context when it receives queries and it responds. In the response, it can send back a reference ID to the client, for it 
-to sent back to itself, in subsequent API calls, so that back end can use the ID to fetch the conversational context (say from Cosmos) and add it to the LLM call as **chat history**
+maintain the conversational context when it receives queries and it responds. 
+
+In the response, it can send back a reference ID to the client, for it to sent back to itself, in subsequent API calls, so that back end can 
+use the ID to fetch the conversational context (say from Cosmos) and add it to the LLM call as **chat history**
 
 
 ### Back end API client program
 
 It may look like this. Do not worry about un-used arguments.
+
 We would use them to build streaming later.
 
 ```python
@@ -387,7 +407,7 @@ class MyRealBackEndAPIClient:
 
 ### Back end API client program - mocked
 
-When building the bot app, you would not want to load the back end API, increase cost & latency for your local development.
+When building the bot app, you would not want to load the back end API & increase cost & latency for your local development.
 Simulate the back end with a small local application that can probably send fixed responses.
 
 
@@ -437,10 +457,12 @@ the deployed code.
 
 For both these 'test' channels, update and delete of activity is **NOT supported**.
 
-So after a request-response cycle, if you perform action say -  delete an activity, it would not work on test channels but would on actual Microsoft Teams.
+So after a request-response cycle, if you perform action say -  delete an activity (or update), it would not work on test channels but would on actual Microsoft Teams.
 
-Below, **on_turn()** was overridden just to capture if the channel supports update/delete of activity or not !
+Below, **on_turn()** was overridden just to capture the channel, to configure if the channel supports update/delete of activity or not !
 This we would use for a workaround streaming solution that we build little later.
+
+**my_bot.py**
 
 ```python
 
@@ -594,13 +616,14 @@ class DefaultConfig:
 There are few important things to note here:
 
  - this is the entry point for the bot for any deployment
- - on emulator, you actually run this program and **main** is executed. This means you can run in mocked mode with:
+ - on emulator, you actually run this program and **main** is executed. This means you can run in mocked mode with this command:
 
        python3 app.py --mocked
- - for any exception, **on_error** is invoked. Handle your exceptions and user messages
- - you will now use Cosmos DB for user state management
- - you will now use a custom middleware which has a 'typing animation' fix
- - when the app is deployed on Azure, remember that Azure webapp **WOULD NOT** execute **main**; it has its own way to run this program, but its is NOT **main** that gets executed
+
+ - for any exception, **on_error** is invoked. Handle your exceptions and user messages here.
+ - you will now use Cosmos DB for user state management.
+ - you will now use a custom middleware which has a 'typing animation' fix embedded.
+ - when the app is deployed on Azure, remember that Azure webapp **WOULD NOT** execute **main**; it has its own command to run this program, but its is NOT **main** that gets executed
    This means **APP = web.Application** will be created for ALL modes (emulator or real deployment), but **web.run_app** is ONLY done for emulator.
    Azure will use the "gunicorn" WSGI to run the app with command below, defined in the deployment ARM scripts
       
@@ -743,7 +766,9 @@ if __name__ == "__main__":
    web.run_app(APP, host="localhost", port=CONFIG.PORT)
 ```
 
-You should be ready to go with mocked or real mode, with Cosmos integration and a working clean Bot with Python SDK.
+You should be ready to go with mocked or real mode, with Cosmos integration and a working clean Bot with Python SDK. We will use **--api-url** a little later
+to mock a streaming back end API, and test the streaming as far as we can before you move the tested code back to main back end API client.
+
 
 
 ## STREAMING MODE
@@ -751,49 +776,54 @@ You should be ready to go with mocked or real mode, with Cosmos integration and 
 Though Microsoft Bot framework claims to support streaming for both C# and Python SDKs, its quite disappointing that there is no sample, blog or
 any example on how to use it.
 
-For this I did not find any example and dumped it !
+For below, I did not find any example and dumped it !
 Keep an eye on updates on examples, if you can find real streaming example.
 
 [Python lib for streaming in Bot](https://pypi.org/project/botframework-streaming/)
 
-At the moment, this library seems to be not in use or under development.
+At the moment, this library seems to be either not in use or even under development. The links here to the source code also do not work !!
 Surprisingly, even for the C# version, no concrete example and guide was available.
 
 ## STREAMING MODE - Workaround
 
-In absence of real streaming implementation, a workaround is possible that can send updated content to a bot's activity to make it "look like"
-as it is streaming !!
+In absence of real streaming implementation, a possible **working** workaround can be to send updated content to a bot's activity to make it "look like"
+as if, it is streaming !!
+
 The back end API in our example should support this.
-The concept is that if there are 26 chunks (a to z) that are sent by back end API (for example, generative AI may be streaming tokens, like on Copilot), then
-we send :
+
+The concept is that if there are 26 chunks (a to z) that are sent by back end API (for example, generative AI may be streaming tokens, just like on Copilot), then
+we send to the bot interface:
 
 **a** to a new activity that is created with id say "ACT_ID"
 
 
-a + b to update the same activity with id "ACT_ID"
+**a + b** to update the same activity with id "ACT_ID"
 
 
-a + b + c to update the same activity with id "ACT_ID"
+**a + b + c** to update the same activity with id "ACT_ID"
 
 
-a + b + c + d to update the same activity with id "ACT_ID"
+**a + b + c + d** to update the same activity with id "ACT_ID"
 
 
-a + b + c + d + e to update the same activity with id "ACT_ID"
+**a + b + c + d + e** to update the same activity with id "ACT_ID"
 
 and so on.
 
 
 This should work but of course, update of activity is not possible as on date on emulator or web chat, so we cannot really test it 
-unless we integrate this with "msteams" channel. What we would experience with the example below is new activities being spit out on the
+unless we integrate this with "msteams" channel. What we would experience with the example below on emulator/web chat is new activities being spit out on the
 channel, each having additional content !
+
+This approach has a drawback that you end up re-sending data again and again which was already sent out - so more data transfer out from Cloud, a little overhead & cost !
 
 
 ### Create a mocked streaming API
 
 We had added 'flask' already on test requirements, will use flask to simulate streaming response.
+
 Let us assume API would receive chunks of data from a LLM. A data chunk can be in your required format, for example as below.
-The mocked API below based on the "Accept" header streams the data or just return entire response in single chunk !
+The mocked API below based on the "Accept" header, either streams the data or just return entire response in single chunk !
 
 **response_stream.jsonl**
 ```json lines
@@ -806,11 +836,11 @@ The mocked API below based on the "Accept" header streams the data or just retur
 {"content":"The","type":"md"}
 {"content":" Hero","type":"md"}
 {"content":" **","type":"md"}
-{"content":"Nam","type":"md"}
-{"content":"e","type":"md"}
+{"content":"Amit","type":"md"}
+{"content":"abh","type":"md"}
 {"content":"-","type":"md"}
-{"content":"Las","type":"md"}
-{"content":"t","type":"md"}
+{"content":"Bacch","type":"md"}
+{"content":"an","type":"md"}
 {"content":"","type":"md"}
 {"content":"**","type":"md"}
 {"content":" does","type":"md"}
@@ -864,6 +894,7 @@ def generate_ndjson():
     for chunk in markdown_chunks:
         chunk = json.dumps(chunk) + '\n'
         print(chunk)
+        # the real streaming simulation with this..
         yield chunk
         time.sleep(0.001)  # Simulate a delay in data generation
 
@@ -924,6 +955,7 @@ class MockedStreamingApiClient:
        self.API_BASE_URL = os.getenv("API_BASE_URL") ## base URL to the APIM endpoint including trailing /
        self.SECRET = os.getenv("API_SECRET") ## can be APIM subscription key
        self.mocked = True
+       # control streaming behavior itself with these environment properties, without need to re-deploy code..
        self.stream_response = os.getenv("STREAM", "true") == "true"
        self.stream_chunk_size = int(os.getenv("STREAM_CHUNK_COLLECTION_SIZE", "8"))
        
@@ -1067,7 +1099,7 @@ async def create_or_update_activity(text_to_send: str,
    ```
 
 
-   Update the bot code to use the new argument in the bot run command.
+  Update the bot code in **my_bot.py** to use the new argument in the bot run command.
 
 
 
@@ -1090,7 +1122,8 @@ async def create_or_update_activity(text_to_send: str,
        return backend_api
    ```
 
-   Point to this mocked API to test your streaming bot on emulator.
+   Point to this mocked API server to test your streaming bot on emulator. You would see multiple incremented activities being thrown on the interface
+   with the last one having complete data. Of course, we expected that, as we cannot update activity on the bot.
    
    ```commandline
    python3 app.py --mocked --api-url=http://localhost:5000
@@ -1100,6 +1133,6 @@ async def create_or_update_activity(text_to_send: str,
 
 ## Testing
 
-Apart from emulator, you can look at this:
+Apart from emulator, you can look at these options:
 
 [Bot Test options](https://learn.microsoft.com/en-us/azure/bot-service/channel-connect-teams?view=azure-bot-service-4.0)

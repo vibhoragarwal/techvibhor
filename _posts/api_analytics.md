@@ -227,8 +227,7 @@ Implement your own logic to create a single record with measure. Key points here
 
    b. add measures in row itself for year, month and date, so that you can query it later.
 
-
-    ```python
+   ```python
     def prepare_partition_measures(timestamp: str) -> list:
         """prepare measure to use as partition
 
@@ -238,7 +237,7 @@ Implement your own logic to create a single record with measure. Key points here
         Returns:
             list of dicts, each as a time stream measure containing Name, Value & Type
         """
-        year, month, day = split_date_time(timestamp) # implement split
+        year, month, day = split_date_time(timestamp) # implement split on your own
         return [{
             'Name': "year",
             'Value': year,
@@ -256,8 +255,8 @@ Implement your own logic to create a single record with measure. Key points here
 
    c. prepare common attributes
 
-     ```python
-       def prepare_common_attributes(payload: dict) -> dict:
+    ```python
+     def prepare_common_attributes(payload: dict) -> dict:
        """prepare common attributes for timestream such as dimensions, measure
        name and type as MULTI
        Args:
@@ -273,12 +272,12 @@ Implement your own logic to create a single record with measure. Key points here
            'MeasureName': 'input_output',
            'MeasureValueType': 'MULTI'
        }
-     ```
+    ```
 
    d. capture exception when write fails
 
 
-    ```python
+  ```python
     try:
         # Write records to Timestream
         result = client.write_records(
@@ -293,8 +292,7 @@ Implement your own logic to create a single record with measure. Key points here
         for key in err.response["RejectedRecords"]:
             msg += f"Rejected Index: {str(key['RecordIndex'])} : {key['Reason']}\n"
         raise Exception(msg) from err
-
-    ```
+  ```
 
 3\. Data is retained in time stream database only for minimal period (1 day) after which it is sent to 'magnetic' store, and kept there for about a week ( magnetic store can be queried). Data is written only to memory store, not to magnetic store. 'EnableMagneticStoreWrites' is set to 'false'. We dont need to write there, as almost instantly, the data to write is available when a request to API comes in (API processing takes few seconds only) - data (identified by timestamp) is stale only by few seconds
 
