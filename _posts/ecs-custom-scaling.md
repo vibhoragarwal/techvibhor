@@ -3,13 +3,13 @@ title: "Customized Scaling of AWS ECS"
 excerpt: "There are multiple use cases to containerize and host proprietary applications on AWS ECS which is “a fully managed container orchestration service that makes it easy for you to deploy, manage, and scale containerized applications”
 
 Scaling ECS then is one of the key needs of any application. This article describes challenges with ECS supported scaling and describes a custom solution to alleviate them."
-coverImage: "/assets/blog/ecs-custom-scaling/custom_autoscaling.png"
+coverImage: "/assets/blog/ecs-custom-scaling/autoscaling_title.png"
 date: "2023-12-16T15:35:07.322Z"
 author:
   name: Vibhor Agarwal
   picture: "/assets/blog/authors/techvibhor.png"
 ogImage:
-  url: "/assets/blog/ecs-custom-scaling/custom_autoscaling.png"
+  url: "/assets/blog/ecs-custom-scaling/autoscaling_title.png"
 
 ---
 

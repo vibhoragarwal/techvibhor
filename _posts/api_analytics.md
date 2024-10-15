@@ -251,11 +251,11 @@ Implement your own logic to create a single record with measure. Key points here
             'Value': day,
             'Type': 'VARCHAR'
         }]
-    ```
+   ```
 
-   c. prepare common attributes
+ c. prepare common attributes
 
-    ```python
+   ```python
      def prepare_common_attributes(payload: dict) -> dict:
        """prepare common attributes for timestream such as dimensions, measure
        name and type as MULTI
@@ -272,9 +272,9 @@ Implement your own logic to create a single record with measure. Key points here
            'MeasureName': 'input_output',
            'MeasureValueType': 'MULTI'
        }
-    ```
+   ```
 
-   d. capture exception when write fails
+ d. capture exception when write fails
 
 
   ```python

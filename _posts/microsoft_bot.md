@@ -48,7 +48,7 @@ When working with Microsoft Bot framework in Python, several challenges were see
 This article attempts to describe and provide solutions for each of them, and also describes deployment on Azure, for newbies.
 
 
-## Take this sample from Microsoft and improve it
+## Take one Python sample from Microsoft and improve it
 
 This is what you should be already aware of, at least a bit !
 
@@ -66,7 +66,10 @@ You can run the bot locally by installing an emulator:
 **app.py** is the entry point to run the bot. You would check out the code, create a virtual env (python 3.11), activate it,  install required dependencies
 and then run   
 
-    python3 app.py
+```commandline
+python3 app.py
+```
+   
 
 Now access the emulator and use the local running server's link : http://localhost:3978/api/messages to talk to back end via emulator interface.
 Once have this working, continue reading.
@@ -117,15 +120,15 @@ Below code extracts will give you more than boilerplate code and fixes to model 
 
 ### Update requirements as below
 
-requirements.txt [contents below]
-
-      botbuilder-core
-      aiohttp
-      botbuilder-integration-aiohttp
-      python-dotenv
-      botbuilder-azure
-      azure-cosmos
-
+requirements.txt
+```text
+botbuilder-core
+aiohttp
+botbuilder-integration-aiohttp
+python-dotenv
+botbuilder-azure
+azure-cosmos
+```
 We will use async programming as much as we can.
 
 Here notice we do not have versions for dependencies; reason is to keep the app up to date with latest versions, patches and fixes for subsequent deployments.
@@ -138,18 +141,20 @@ in the environment settings of the web app deployment on Azure to fetch these at
 
 
 
-requirements-test.txt [contents below]
-
-      -r requirements.txt
-      flask
-      pytest
-      faker
-      aioresponses
-      pytest-asyncio
-
+requirements-test.txt
+```text
+-r requirements.txt
+flask
+pytest
+faker
+aioresponses
+pytest-asyncio
+```
 You can run this file:
 
+```commandline
       pip install -r requirements-test.txt
+```
 
 on your venv (create with **python 3.11**) which installs the test dependencies also on local virtual env so that you can run your tests from your IDE or CLI.
 But when deploying **requirements.txt** file would be used and dependencies installed. This means we can avoid installing redundant testing dependencies
@@ -618,7 +623,9 @@ There are few important things to note here:
  - this is the entry point for the bot for any deployment
  - on emulator, you actually run this program and **main** is executed. This means you can run in mocked mode with this command:
 
-       python3 app.py --mocked
+```commandline
+python3 app.py --mocked
+```
 
  - for any exception, **on_error** is invoked. Handle your exceptions and user messages here.
  - you will now use Cosmos DB for user state management.
@@ -627,7 +634,9 @@ There are few important things to note here:
    This means **APP = web.Application** will be created for ALL modes (emulator or real deployment), but **web.run_app** is ONLY done for emulator.
    Azure will use the "gunicorn" WSGI to run the app with command below, defined in the deployment ARM scripts
       
-        gunicorn --bind 0.0.0.0 --worker-class aiohttp.worker.GunicornWebWorker --timeout 600 app:APP
+```commandline
+gunicorn --bind 0.0.0.0 --worker-class aiohttp.worker.GunicornWebWorker --timeout 600 app:APP
+```   
    
    The "APP" after "app:" should match your object name below that instantiates **web.Application**
 
@@ -854,8 +863,6 @@ The mocked API below based on the "Accept" header, either streams the data or ju
 {"content":"**","type":"md"}
 {"content":"End of content","type":"md"}
 {"content":"**","ended":true,"type":"md"}
-
-
 ```
 
 **app.py**
@@ -1083,53 +1090,55 @@ async def create_or_update_activity(text_to_send: str,
 
 ### Bring the mocked API up and point bot program to use the mocked API
 
-    python mocked_streaming_api.py
+```commandline
+python mocked_streaming_api.py
+```
 
    Spits out:
 
-   ```commandline
-   * Serving Flask app 'app'
-   * Debug mode: on
-   WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
-   * Running on http://127.0.0.1:5000
-   Press CTRL+C to quit
-   * Restarting with stat
-   * Debugger is active!
-   * Debugger PIN: 331-567-771
-   ```
+```commandline
+* Serving Flask app 'app'
+* Debug mode: on
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+* Running on http://127.0.0.1:5000
+Press CTRL+C to quit
+* Restarting with stat
+* Debugger is active!
+* Debugger PIN: 331-567-771
+```
 
 
   Update the bot code in **my_bot.py** to use the new argument in the bot run command.
 
 
 
-   ```python
-   def get_api():
-       run_mocked = os.environ.get("MOCKED_MODE", "false")
-       if run_mocked.lower() == "true":
-           print('running in mocked mode')
-           mocked_api_url = os.environ.get("MOCKED_MODE_BACKEND_API_URL", None)
-           if mocked_api_url:
-               print(f' mocked mode will use {mocked_api_url} as the back end API')
-               backend_api = MockedStreamingApiClient(mocked_api_url)
-           else:
-               print(' mocked mode will use emit fixed content as the back end API')
-               backend_api = MockedFixedApiClient()
-       else:
-           # actual live call
-           print('running live')
-           backend_api = MyRealBackEndAPIClient()
-       return backend_api
-   ```
+  ```python
+  def get_api():
+      run_mocked = os.environ.get("MOCKED_MODE", "false")
+      if run_mocked.lower() == "true":
+          print('running in mocked mode')
+          mocked_api_url = os.environ.get("MOCKED_MODE_BACKEND_API_URL", None)
+          if mocked_api_url:
+              print(f' mocked mode will use {mocked_api_url} as the back end API')
+              backend_api = MockedStreamingApiClient(mocked_api_url)
+          else:
+              print(' mocked mode will use emit fixed content as the back end API')
+              backend_api = MockedFixedApiClient()
+      else:
+          # actual live call
+          print('running live')
+          backend_api = MyRealBackEndAPIClient()
+      return backend_api
+  ```
 
-   Point to this mocked API server to test your streaming bot on emulator. You would see multiple incremented activities being thrown on the interface
-   with the last one having complete data. Of course, we expected that, as we cannot update activity on the bot.
+  Point to this mocked API server to test your streaming bot on emulator. You would see multiple incremented activities being thrown on the interface
+  with the last one having complete data. Of course, we expected that, as we cannot update activity on the bot.
    
-   ```commandline
-   python3 app.py --mocked --api-url=http://localhost:5000
-   ```
+  ```commandline
+  python3 app.py --mocked --api-url=http://localhost:5000
+  ```
 
-   Once satisfied, update your real client code with the updates tested in mocked API mode. !
+  Once satisfied, update your real client code with the updates tested in mocked API mode. !
 
 ## Testing
 
