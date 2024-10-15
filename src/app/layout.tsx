@@ -13,9 +13,9 @@ export const metadata: Metadata = {
   // title: `Next.js Blog Example with ${CMS_NAME}`,
   title: `Vibhor Agarwal's Blog`,
   // description: `A statically generated blog example using Next.js and ${CMS_NAME}.`,
-  description: `Vibhor Agarwal's Blog using Next.js template and ${CMS_NAME}.`,
+  description: `Vibhor Agarwal's Blog Site`,
   openGraph: {
-    images: [HOME_OG_IMAGE_URL],
+    images: ['/assets/blogs/authors/techvibhor.png'],
   },
 };
 

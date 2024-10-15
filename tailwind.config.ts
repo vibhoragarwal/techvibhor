@@ -9,6 +9,9 @@ const config: Config = {
   ],
   theme: {
     extend: {
+     maxWidth: {
+        '3xl': '72rem', // Custom value for max-w-3xl
+      },
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
         "gradient-conic":
