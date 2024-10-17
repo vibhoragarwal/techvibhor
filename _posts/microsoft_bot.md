@@ -16,7 +16,7 @@ ogImage:
 
 When creating chatbots with Microsoft based technologies, there are few considerations:
 
-https://learn.microsoft.com/en-us/microsoftteams/playbook/technology-choices/pvavsazurebot
+[Microsoft Documentation on Bots](https://learn.microsoft.com/en-us/microsoftteams/playbook/technology-choices/pvavsazurebot)
 
 Microsoft offers two different technologies for building chatbot solutions: **Azure AI Bot Services (formerly known as Azure Bot Framework)**, a traditional software SDK,
 and **Microsoft Copilot Studio**, a modern low-code approach for building chatbots.
@@ -153,7 +153,7 @@ pytest-asyncio
 You can run this file:
 
 ```commandline
-      pip install -r requirements-test.txt
+pip install -r requirements-test.txt
 ```
 
 on your venv (create with **python 3.11**) which installs the test dependencies also on local virtual env so that you can run your tests from your IDE or CLI.

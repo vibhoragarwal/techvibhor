@@ -6,6 +6,11 @@
   <component name="ChangeListManager">
     <list default="true" id="c50ab272-8fdf-49db-a92b-2ab0e7874687" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/_about/about.md" beforeDir="false" afterPath="$PROJECT_DIR$/_about/about.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/_posts/api_analytics.md" beforeDir="false" afterPath="$PROJECT_DIR$/_posts/api_analytics.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/_posts/microsoft_bot.md" beforeDir="false" afterPath="$PROJECT_DIR$/_posts/microsoft_bot.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/app/about/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/app/about/page.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/yarn.lock" beforeDir="false" afterPath="$PROJECT_DIR$/yarn.lock" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

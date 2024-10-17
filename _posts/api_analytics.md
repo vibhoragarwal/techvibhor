@@ -13,17 +13,24 @@ ogImage:
 
 # Introduction 
 
-This document describes the high level workflow to capture request data at various stages for analytics
+This blog describes the high level workflow to capture request data at various stages for analytics.
+When working with APIs having complex multistage workflow, we may need to collect data a various stages of workflow to be able to analyze or improve
+the business logic later.
+
+To avoid adding latency, and to be able to still able to collect data at various stages, we would use asynchronous AWS services, and use AWS Timestream DB to
+persist this data, and then export it on a daily basis to S3 in a partitioned format. We would then add a new API to allow download of this data.
 
 
 
 ## Objective
 
-Collect API trace data in a custom format with fields that might be needed by developer for analysis in a S3 bucket, on a daily basis.
+Collect API trace data in your lambda API workflow in custom format with fields that might be needed by developer for analysis in a S3 bucket, on a daily basis.
 Data in S3 must be partitioned by year/month/day, so that we can even run Athena queries later.
 Also, the data in S3 should be downloadable over an API call.
 
-1. A framework utility (indicators below) can be used to collect data in a dictionary in your main lambda's memory (not described here). Code may look like this to capture data in memory for each API call.
+1. A framework utility (indicators below) can be used to collect data in a dictionary in your main lambda's memory (not described here).
+
+2. Code may look like this to capture data in memory within each API call.
 
 ```python
 def lambda_handler(event: any, context: any):
@@ -41,28 +48,38 @@ def lambda_handler(event: any, context: any):
 2. Capture key outcomes of API at various stages of workflow in a dictionary (lives in python memory)
 
 ```python
-    # populate data for your in-memory dictionary at various stages of your code flow
-    MyInMemoryData.AnalyticsData["json_request_body"] = copy.deepcopy(body)
-    ...
-    MyInMemoryData.AnalyticsData["col1"] = len(data)
-    MyInMemoryData.AnalyticsData["col2"] = {some dict data}
-    ....
+ # populate data for your in-memory dictionary at various stages of your code flow
+ MyInMemoryData.AnalyticsData["json_request_body"] = copy.deepcopy(body)
+ ...
+ MyInMemoryData.AnalyticsData["col1"] = len(data)
+ MyInMemoryData.AnalyticsData["col2"] = {some dict data}
+ ....
+ MyInMemoryData.AnalyticsData["response"] = {some dict data}
 ```
 
 ## Infrastructure as Code for this feature
+
+Let us build the infrastructure first that can persist this data in a reliable & costeffective manner.
+We would use AWS SQS, Lambda, Timestream, S3 primarily to build our solution.
 
 
 Snippets below for 'serverless' framework with Cloud Formation.
 
 [Serverless Infra as Code](https://www.serverless.com/framework/docs/providers/aws/guide/serverless.yml)
 
-**'analytics' lambda is deployed and has 2 triggers:**
+**'analytics' lambda which has 2 triggers:**
 
  - load on SQS
  - an event bridge event rule (CRON) that runs daily
 
+The collected data, we would send to SQS, which would trigger this lambda which then processed the data and persist in AWS Timestream.
+We then use another event to trigger the same lambda on a daily basis, to read the previous day's of collected data and persist in S3.
 
 **'analytics-download' lambda offloads preparation of data for analytics on S3**
+
+We would add a new API in our primary application which when receiving the request for data between start/end dates, it would use another queue to drop
+the request and have this lambda process it to prepare the zip file from daily record files that we persisted earlier. A pre signed URL for this would
+be sent to user to download the file once ready ( you can create a pre signed URL even when file does not exist yet :) )
 
  - load on a different queue, where message is sent when API request is received
 
@@ -89,26 +106,26 @@ Snippets below for 'serverless' framework with Cloud Formation.
 
 We need other cloud resources also:
 
-1\. AnalyticsSQS: FIFO queue that would receive API data to persist in time stream database from 'analytics' lambda above
+1\. **AnalyticsSQS**: FIFO queue that would receive API data to persist in time stream database from 'analytics' lambda above
 
-2\. AnalyticsTimeStreamDB: Time stream database
+2\. **AnalyticsTimeStreamDB**: Time stream database
 
-3\. AnalyticsTimeStreamTable: Table under the database; note that we dont write in magnetic store but only memory. In memory, only 1 hour old timestamp data can be written (we write instantly !). We also retain data in magnetic store (cheaper) for 7 days only
+3\. **AnalyticsTimeStreamTable**: Table under the database; note that we do not write in magnetic store but only memory. 
+In memory, only 1-hour old timestamp data can be written (we write instantly !). We also retain data in magnetic store (cheaper) for 7 days only
 
-4\. AnalyticsAsyncLambdaSNSDestination, AnalyticsAsyncLambdaSNSEmailSubscription1: we also need a SNS topic and an email subscription to this topic to alert developers via email in case this functionality is broken ( since this feature is not exposed via API, users would not report failures)
+4\. **AnalyticsAsyncLambdaSNSDestination**, **AnalyticsAsyncLambdaSNSEmailSubscription1**: we also need a SNS topic and an email subscription to this topic to alert developers via email in case this functionality is broken ( since this feature is not exposed via API, users would not report failures)
 
-5\. AnalyticsS3Bucket: S3 bucket to finally persist the time stream data. In STANDARD tier, we retain data for 2 months, to allow download of data in this period after which
+5\. **AnalyticsS3Bucket**: S3 bucket to finally persist the time stream data. In STANDARD tier, we retain data for 2 months, to allow download of data in this period after which
    data is pushed to INFREQUENT ACCESS tier, where it stays for another 30 days, before being archived in GLACIER. The data expires after 1 year of its creation
    There is another lifecycle rule that we run for files under /tmp prefix in this bucket, to delete files after 1 day only ! This is to support admin requests to download data
    over a date range, which are zipped and uploaded under /tmp prefix as a zip file, for users to download via signed URL. Since this URL is active only for few minutes, we 
    do not need long retention for 'tmp' files, the contents of this prefix are cleaned up automatically in 1 day using S3 lifecycle rules.
 
-6\. AnalyticsDataDownloadSQS: Queue to offload download data requests. Main lamdba that received API requests can offload the work to this queue, which can be then processed by 'analytics-download' lambda.
+6\. **AnalyticsDataDownloadSQS**: Queue to offload download data requests. Main lambda that received API requests can offload the work to this queue, which can be then processed by 'analytics-download' lambda.
 
 
 
 ```yaml
-
 Resources:
     AnalyticsSQS:
       Type: AWS::SQS::Queue
@@ -176,7 +193,6 @@ Resources:
 Refer to the architecture for numbered flows.
 
 
-
 ![Analytics Architecture](/assets/blog/api_analytics/analytics.png)  
 
 
@@ -196,103 +212,103 @@ Implement your own logic to create a single record with measure. Key points here
 
    a. map right data type to the record, for e.g. you can use measure name to indicate type of data - str/numeric. 'json' can be converted to string and persisted in time stream.
 
-   ```python
-    def prepare_measure(payload: dict, measure_name: str) -> dict:
-        """prepare measure with attrs name, value and type
-        Convert all JSON to VARCHAR and numeric type as BIGINT
-        Args:
-            payload: user data as dict
-            measure_name: name of measure
+```python
+def prepare_measure(payload: dict, measure_name: str) -> dict:
+  """prepare measure with attrs name, value and type
+  Convert all JSON to VARCHAR and numeric type as BIGINT
+  Args:
+      payload: user data as dict
+      measure_name: name of measure
 
-        Returns:
-            dict of measure
-        """    print(result)_type = 'VARCHAR'
-        elif "count" in measure_name:
-            if measure_name not in payload:
-                payload[measure_name] = -1 # indicates not relevant for when this measure has no collected data in api
-            measure_value = str(payload[measure_name])
-            measure_type = 'BIGINT'
-        else:
-            # measures such as request_id, user_id (varchar)
-            # always expected in payload
-            measure_value = str(payload[measure_name])
-            measure_type = 'VARCHAR'
+  Returns:
+      dict of measure
+  """    print(result)_type = 'VARCHAR'
+  elif "count" in measure_name:
+      if measure_name not in payload:
+          payload[measure_name] = -1 # indicates not relevant for when this measure has no collected data in api
+      measure_value = str(payload[measure_name])
+      measure_type = 'BIGINT'
+  else:
+      # measures such as request_id, user_id (varchar)
+      # always expected in payload
+      measure_value = str(payload[measure_name])
+      measure_type = 'VARCHAR'
 
-        return {
-            'Name': measure_name,
-            'Value': measure_value,
-            'Type': measure_type
-        }
-   ```
+  return {
+      'Name': measure_name,
+      'Value': measure_value,
+      'Type': measure_type
+  }
+```
 
    b. add measures in row itself for year, month and date, so that you can query it later.
 
-   ```python
-    def prepare_partition_measures(timestamp: str) -> list:
-        """prepare measure to use as partition
+```python
+def prepare_partition_measures(timestamp: str) -> list:
+  """prepare measure to use as partition
 
-        Args:
-            timestamp: timestamp as string for this time stream entry
+  Args:
+      timestamp: timestamp as string for this time stream entry
 
-        Returns:
-            list of dicts, each as a time stream measure containing Name, Value & Type
-        """
-        year, month, day = split_date_time(timestamp) # implement split on your own
-        return [{
-            'Name': "year",
-            'Value': year,
-            'Type': 'VARCHAR'
-        }, {
-            'Name': "month",
-            'Value': month,
-            'Type': 'VARCHAR'
-        }, {
-            'Name': "day",
-            'Value': day,
-            'Type': 'VARCHAR'
-        }]
-   ```
+  Returns:
+      list of dicts, each as a time stream measure containing Name, Value & Type
+  """
+  year, month, day = split_date_time(timestamp) # implement split on your own
+  return [{
+      'Name': "year",
+      'Value': year,
+      'Type': 'VARCHAR'
+  }, {
+      'Name': "month",
+      'Value': month,
+      'Type': 'VARCHAR'
+  }, {
+      'Name': "day",
+      'Value': day,
+      'Type': 'VARCHAR'
+  }]
+```
 
  c. prepare common attributes
 
-   ```python
-     def prepare_common_attributes(payload: dict) -> dict:
-       """prepare common attributes for timestream such as dimensions, measure
-       name and type as MULTI
-       Args:
-           payload: dict of user data
-   
-       Returns:
-           dict
-       """
-       return {
-           'Dimensions': [
-               {'Name': 'api', 'Value': payload["request_url"]}
-           ],
-           'MeasureName': 'input_output',
-           'MeasureValueType': 'MULTI'
-       }
-   ```
+```python
+def prepare_common_attributes(payload: dict) -> dict:
+ """prepare common attributes for timestream such as dimensions, measure
+ name and type as MULTI
+ Args:
+     payload: dict of user data
+
+ Returns:
+     dict
+ """
+ return {
+     'Dimensions': [
+         {'Name': 'api', 'Value': payload["request_url"]}
+     ],
+     'MeasureName': 'input_output',
+     'MeasureValueType': 'MULTI'
+ }
+```
 
  d. capture exception when write fails
 
 
-  ```python
-    try:
-        # Write records to Timestream
-        result = client.write_records(
-            DatabaseName=db,
-            TableName=table,
-            CommonAttributes=prepare_common_attributes(payload),
-            Records=records)
-    # pylint: disable=broad-except
-    except client.exceptions.RejectedRecordsException as err:
-        print("RejectedRecords: ", err)
-        msg = ""
-        for key in err.response["RejectedRecords"]:
-            msg += f"Rejected Index: {str(key['RecordIndex'])} : {key['Reason']}\n"
-        raise Exception(msg) from err
-  ```
+```python
+try:
+  # Write records to Timestream
+  result = client.write_records(
+      DatabaseName=db,
+      TableName=table,
+      CommonAttributes=prepare_common_attributes(payload),
+      Records=records)
+# pylint: disable=broad-except
+except client.exceptions.RejectedRecordsException as err:
+  print("RejectedRecords: ", err)
+  msg = ""
+  for key in err.response["RejectedRecords"]:
+      msg += f"Rejected Index: {str(key['RecordIndex'])} : {key['Reason']}\n"
+  raise Exception(msg) from err
+```
 
 3\. Data is retained in time stream database only for minimal period (1 day) after which it is sent to 'magnetic' store, and kept there for about a week ( magnetic store can be queried). Data is written only to memory store, not to magnetic store. 'EnableMagneticStoreWrites' is set to 'false'. We dont need to write there, as almost instantly, the data to write is available when a request to API comes in (API processing takes few seconds only) - data (identified by timestamp) is stale only by few seconds
 
@@ -305,7 +321,6 @@ The magnetic store is optimized for lower throughput late-arriving data writes, 
 1\. The lambda : "lambda_analytics.lambda_handler" is also triggered on a daily basis at 00 hours GMT, by an event bridge rule (CRON job). Since this is an event, control code flow to invoke: 'load_timestream_data_to_s3' method ( we are using same lambda to create timestream entry and also to upload data to S3) - to keep logic together and for traceability.
 
 ```python
-
 def load_timestream_data_to_s3() -> int:
     """query time stream DB
      Returns:
@@ -443,19 +458,19 @@ Message sending to SQS produces an ID called here 'sqs_identifier'
 
 
 ```python
-    data = {'start_date': start_date, 'end_date': end_date}
-    message_id = AnalyticsDataDownloadSQS.publish_queue_data(data) #implement your logic
+ data = {'start_date': start_date, 'end_date': end_date}
+ message_id = AnalyticsDataDownloadSQS.publish_queue_data(data) #implement your logic
 
-    # use the file name : tmp/message_id.zip
-    download_link = generate_presigned_download_url(message_id)
+ # use the file name : tmp/message_id.zip
+ download_link = generate_presigned_download_url(message_id)
 
-    # generate the pre signed URL even when download file is not ready, with a message
-    # this avoids sending an email later, when zip is done
-    return {
-        "result": "ok",
-        "message": "Your file is being prepared, use the link to download file after couple of   minutes",
-        "download_link": download_link
-    }
+ # generate the pre signed URL even when download file is not ready, with a message
+ # this avoids sending an email later, when zip is done
+ return {
+     "result": "ok",
+     "message": "Your file is being prepared, use the link to download file after couple of   minutes",
+     "download_link": download_link
+ }
 ```
 
 The processing lambda "lambda_download_analytics.lambda_handler" would iterate over the date range to download data from S3 analytics bucket into '/tmp' location (of the lambda ephemeral space), zip the files, and upload to a 'tmp' prefix in S3 with a pre-defined name matching with what API caller was sent back as the download link for the file.
@@ -464,54 +479,54 @@ The name of the zip is '<message_id>.zip' - same file name is used when creating
 
 
 ```python
-    os.makedirs('/tmp', exist_ok=True)
-    delete_files_in_directory('/tmp') # implement your logic
+os.makedirs('/tmp', exist_ok=True)
+delete_files_in_directory('/tmp') # implement your logic
 
-    # Iterate over the date range
-    current_date = datetime.strptime(start_date, "%Y-%m-%d").date()
-    end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+# Iterate over the date range
+current_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
 
-    s3 = boto3.client('s3')
+s3 = boto3.client('s3')
 
-    # Define the S3 bucket and object key
-    bucket_name = 'ANALYTICS_BUCKET' # implement your code
+# Define the S3 bucket and object key
+bucket_name = 'ANALYTICS_BUCKET' # implement your code
 
-    # download for both inclusive dates
-    while current_date <= end_date:
-        prefix = f"my_analytics/year={current_date.year}/month={current_date.strftime('%B')}/day={current_date.day}"
-        f_name = f"{current_date.year}-{current_date.strftime('%B')}-{current_date.day}"
-        current_date += timedelta(days=1)
+# download for both inclusive dates
+while current_date <= end_date:
+  prefix = f"my_analytics/year={current_date.year}/month={current_date.strftime('%B')}/day={current_date.day}"
+  f_name = f"{current_date.year}-{current_date.strftime('%B')}-{current_date.day}"
+  current_date += timedelta(days=1)
 
-        print(f'listing contents under prefix {prefix}')
-        response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+  print(f'listing contents under prefix {prefix}')
+  response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
 
-        if 'Contents' in response:
-            for obj in response['Contents']:
-                key = obj['Key']
-                download_name = f'{f_name}-{os.path.basename(key)}'
-                download_name = os.path.join('/tmp', download_name)
-                s3.download_file(bucket_name, key, download_name)
-                print(f"    downloaded {key} as {download_nam
-                at_least_one_file_found = Truee}")
-        else:
-            print("   no files found")
+  if 'Contents' in response:
+      for obj in response['Contents']:
+          key = obj['Key']
+          download_name = f'{f_name}-{os.path.basename(key)}'
+          download_name = os.path.join('/tmp', download_name)
+          s3.download_file(bucket_name, key, download_name)
+          print(f"    downloaded {key} as {download_nam
+          at_least_one_file_found = Truee}")
+  else:
+      print("   no files found")
 
-    # name should align  as the pre signed
-    # URL was already generated for this name
-    # and sent back to caller when request was submitted
-    s3_key = f"tmp/{message_id}.zip"
-    # Create an in-memory bytes buffer
-    with io.BytesIO() as buffer:
+# name should align  as the pre signed
+# URL was already generated for this name
+# and sent back to caller when request was submitted
+s3_key = f"tmp/{message_id}.zip"
+# Create an in-memory bytes buffer
+with io.BytesIO() as buffer:
 
-        # zip buffer may be empty if no files were found in the given date range
-        zip_files(buffer, "/tmp")
+  # zip buffer may be empty if no files were found in the given date range
+  zip_files(buffer, "/tmp")
 
-        if not at_least_one_file_found:
-            print('no files were found in the given date range, empty zip file being created !!')
+  if not at_least_one_file_found:
+      print('no files were found in the given date range, empty zip file being created !!')
 
-        s3.upload_fileobj(buffer, bucket_name, s3_key)
-        print(f"Uploaded zip to s3://{bucket_name}/{s3_key}")
+  s3.upload_fileobj(buffer, bucket_name, s3_key)
+  print(f"Uploaded zip to s3://{bucket_name}/{s3_key}")
 
-        delete_files_in_directory('/tmp')
+  delete_files_in_directory('/tmp')
 ```
 
