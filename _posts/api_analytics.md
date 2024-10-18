@@ -11,6 +11,10 @@ ogImage:
 
 ---
 
+
+
+![](/assets/blog/api_analytics/analytics_title.png)  
+
 # Introduction 
 
 This blog describes the high level workflow to capture request data at various stages for analytics.

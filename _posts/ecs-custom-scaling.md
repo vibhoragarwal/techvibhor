@@ -13,6 +13,7 @@ ogImage:
 
 ---
 
+![](/assets/blog/ecs-custom-scaling/autoscaling_title.png)  
 
 
 ## Problem Statement

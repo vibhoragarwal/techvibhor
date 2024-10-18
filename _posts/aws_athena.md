@@ -13,6 +13,9 @@ ogImage:
 ---
 
 
+
+![](/assets/blog/aws-athena/athena_blog.png)  
+
 ## Summary 
 
 This blog details few key learnings from experience working with AWS Athena.

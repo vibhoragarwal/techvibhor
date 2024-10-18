@@ -11,6 +11,8 @@ ogImage:
 
 ---
 
+![](/assets/blog/microsoft_bot/microsoft_bot_title.png) 
+
 # Bot framework 
 
 
