@@ -1,3 +1,5 @@
 https://ap-northeast-1.console.aws.amazon.com/amplify/apps
 
 Asia Pacific Tokyo on vibhor75.agarwal@gmail.com/vibhor account
+
+npm run dev

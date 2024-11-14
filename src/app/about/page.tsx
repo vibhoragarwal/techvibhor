@@ -31,12 +31,7 @@ export default async function About() {
         className={markdownStyles["markdown"]}
         dangerouslySetInnerHTML={{ __html: content_html }}
       />
-   
-    <Link href="/Vibhor_Agarwal_Resume_1.1_Nov24.pdf" target="_blank">
-    <h2 className="mb-8 text-xl md:text-2xl font-bold tracking-tighter leading-tight hover:underline">
-        Download Resume
-      </h2>
-      </Link>
+
 
       <Link href="https://www.linkedin.com/in/vibhoragarwaltechfree/" target="_blank">
     <h2 className="mb-8 text-xl md:text-2xl font-bold tracking-tighter leading-tight hover:underline">
