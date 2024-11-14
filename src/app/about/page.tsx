@@ -32,7 +32,7 @@ export default async function About() {
         dangerouslySetInnerHTML={{ __html: content_html }}
       />
    
-    <Link href="/Vibhor_Agarwal_Resume_4.1.pdf" target="_blank">
+    <Link href="/Vibhor_Agarwal_Resume_1.1_Nov24.pdf" target="_blank">
     <h2 className="mb-8 text-xl md:text-2xl font-bold tracking-tighter leading-tight hover:underline">
         Download Resume
       </h2>
@@ -42,10 +42,6 @@ export default async function About() {
     <h2 className="mb-8 text-xl md:text-2xl font-bold tracking-tighter leading-tight hover:underline">
        Linkedin
       </h2>
-      </Link>
-
-       <Link href="/Vibhor_Agarwal_Resume_4.1_detailed.pdf" target="_blank">
-    You can download full resume here
       </Link>
 
       </div>
