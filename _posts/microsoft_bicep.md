@@ -17,6 +17,9 @@ ogImage:
 # What are we deploying using Bicep
 
 See here on the Bot framework based application that we had built so far.
+
+[All about Microsoft Bot Framework (Python), Streaming Content & Azure Deployment for GenAI powered Chatbots](microsoft_bot)
+
 Microsoft documentation provides basic default ARM templates, which we would replace with Bicep scripts, with several
 integrations with Azure services, in a modular design covering several aspects of IaC development with Azure bicep.
 
@@ -53,7 +56,7 @@ Note that when deleting resource group multiple times, if soft delete is enabled
 Hence, here we disable soft delete so that we can use default create mode (other one is 'recover') every time we create the infra.
 Key Vault is a global Azure service
 
-```terraform 
+```yaml 
 param location string
 param resourcePrefix string
 param commonTags object
@@ -89,7 +92,7 @@ output botKeyVaultName string = botKeyVault.name
 Assuming existing key vault, that our bot's managed identity wants to use, is configured with Vault Access Policy. 
 All we want is to list & get secrets.
 
-```terraform 
+```yaml 
 param keyVaultName string
 param managedIdentityPrincipalId string
 
@@ -144,7 +147,7 @@ resource keyVaultAccessPolicy 'Microsoft.KeyVault/vaults/accessPolicies@2024-04-
 Here, we try to give permissions to the managed identity to use the Key Vault that we created to persist any bot specific secrets
 (such as Cosmos DB connection, which we would do a little later) in this Resource Group itself.
 
-```terraform 
+```yaml 
 param botKeyVaultName string
 param managedIdentityPrincipalId string
 
@@ -185,7 +188,7 @@ Create the managed identity and assign permissions to this.
  - permissions to use Key Vault created for bot secrets
  - permissions to use Key Vault that was existing to be used
 
-```terraform 
+```yaml 
 param location string
 param resourcePrefix string
 param commonTags object
@@ -236,7 +239,7 @@ output userAssignedClientId string = userAssignedIdentity.properties.clientId
 Create the Cosmos DB serverless where we would persist user states.
 Also, lookup the key vault that we created for this purpose and create secrets for Cosmos DB connection string & secret key !
 
-```terraform 
+```yaml 
 param location string
 param resourcePrefix string
 param commonTags object
@@ -344,8 +347,7 @@ However, in example below, the SKU used is always 'Standard', for the reason tha
 To enable slots, we cannot work with Free Tier plan - Azure does not allow this, hence the 'Standard'.
 You can choose your own plan.
 
-```terraform 
-
+```yaml
 param resourcePrefix string
 param location string
 param deploymentStage string
@@ -405,7 +407,7 @@ Try to abstract all complexity of app to this module, such as:
  - gunicorn WSGI wrapped main command (note name of our main bot file is **app.py**)
  - set common variables such as PYTHONUNBUFFERED, to flush logs in python immediately
 
-```terraform 
+```yaml 
 param resourcePrefix string
 param location string
 param commonTags object
@@ -551,7 +553,7 @@ Create the Bot service.
 Here you can choose SKUs depending on the deployment stage.
 
 
-```terraform 
+```yaml 
 param resourcePrefix string
 param location string
 param commonTags object
@@ -599,7 +601,7 @@ resource botService 'Microsoft.BotService/botServices@2023-09-15-preview' = {
 Note that bot cannot be deployed to all regions
 Also note that default values for each param is required in bicep
 
-```terraform 
+```yaml 
 using './main.bicep'
 
 param location = 'westeurope'
@@ -622,7 +624,7 @@ should have a non-conflicting name with params defined in **main.bicep** such as
 or even as defined for other modules !!
 
 
-```terraform
+```yaml
 @description('The location of resource. Defaults to location of resource group. Note that bot service is not supported in all regions')
 param location string = resourceGroup().location
 
@@ -798,7 +800,7 @@ Note the path of **.env** file, correct as necessary.
 
 We would improve this later to use GitHub actions !!
 
-```shell
+```bash
 #!/bin/bash
 
 # Check if the variable is set in the environment
@@ -957,7 +959,7 @@ rm -rf target/bot.zip
 zip -r target/bot.zip . -x  '*docs*' '*.git*' -x "*pytest_cache*" -x "*__pycache__*" -x "*.md" -x "*.idea/*" -x "*infrastructure*" "*deployments*" -x "tests*" -x "target*" -x .env
 
 
-
+# Run the deployment command
 # Run the deployment command, first time is too slow as python image is downloaded, installed and several other hidden init activities..
 az webapp deploy --resource-group $TEAMS_BOT_RESOURCE_GROUP_NAME\
   --name $APP_SERVICE_NAME\
@@ -967,7 +969,6 @@ az webapp deploy --resource-group $TEAMS_BOT_RESOURCE_GROUP_NAME\
   --async true \
   --timeout 900
 
-# run tests if you have
-python -m pytest ../tests/deploy
 
+python -m pytest ../tests/deploy
 ```

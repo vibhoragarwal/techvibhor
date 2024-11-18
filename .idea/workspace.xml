@@ -6,7 +6,9 @@
   <component name="ChangeListManager">
     <list default="true" id="c50ab272-8fdf-49db-a92b-2ab0e7874687" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/_posts/microsoft_bicep.md" beforeDir="false" afterPath="$PROJECT_DIR$/_posts/microsoft_bicep.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/_posts/microsoft_bot.md" beforeDir="false" afterPath="$PROJECT_DIR$/_posts/microsoft_bot.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/app/_components/markdown-styles.module.css" beforeDir="false" afterPath="$PROJECT_DIR$/src/app/_components/markdown-styles.module.css" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -28,14 +30,14 @@
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
     "RunOnceActivity.ShowReadmeOnStart": "true",
-    "last_opened_file_path": "/localhome/vibhor/development/techvibhor/bot"
+    "last_opened_file_path": "/localhome/vibhor/development/techvibhor/_posts"
   }
 }]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/_posts" />
       <recent name="$PROJECT_DIR$/bot" />
       <recent name="$PROJECT_DIR$" />
-      <recent name="$PROJECT_DIR$/_posts" />
     </key>
   </component>
   <component name="SharedIndexes">
