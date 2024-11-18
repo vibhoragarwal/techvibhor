@@ -50,7 +50,7 @@ When working with Microsoft Bot framework in Python, several challenges were see
 This article attempts to describe and provide solutions for each of them, and also describes deployment on Azure, for newbies.
 
 
-## Take one Python sample from Microsoft and improve it
+## Take one Python sample from Microsoft and build on top of it
 
 This is what you should be already aware of, at least a bit !
 
@@ -88,16 +88,26 @@ chat messaging end point. The **web app** can then have any logic to respond to 
 Here are our requirements:
 
  - update basic bot to a production ready version
- - integrate bot with back end API that would actually serve user queries
+ - use User Managed Service Identity for the bot
  - handle exceptions from BOT as well as the back end API gracefully
- - deploy bot on Azure as web app + deploy Azure bot service
  - fix SDK issues that were experienced with this **not so robust** framework
  - some tests around the bot (will leave up to you to use **pytest** and add them)
  - use python 3.11 (instead of default provided in sample)
- - robust persistence of user state (state management) on Azure Cosmos (you can use Blob)
- - streaming (does not really work in an ideal case but here we implement a workaround *working** solution)
+ - streaming - no clue if SDK really supports it or not ? But here, we implement a solid workaround **working** and **production tested** solution !
  - understand & implement web app and bot service deployment
 
+Also, some Azure integrations:
+
+ - robust persistence of user state (state management) on Azure Cosmos (you can use Blob)
+ - and read Cosmos DB connection details from a key vault created for the bot
+ - integrate with existing App Insights instance to send the logs
+ - integrate bot with back end API (using a secret) that would actually serve user queries
+
+
+Add some tests:
+
+ - unit tests mocking back end API
+ - deploy tests (post deployment) to verify if app is up ?
 
 
 Here is the architecture that we try to build:
@@ -119,6 +129,7 @@ This is a special service on Azure under "Microsoft.BotService/botServices".
 ## Bot code and components
 
 Below code extracts will give you more than boilerplate code and fixes to model your bot as per your needs.
+Any LOGGER statements are expected to send the logs to integrated App Insights instance.
 
 ### Update requirements as below
 
@@ -130,6 +141,9 @@ botbuilder-integration-aiohttp
 python-dotenv
 botbuilder-azure
 azure-cosmos
+azure-identity
+azure-keyvault-secrets
+azure-monitor-opentelemetry
 ```
 We will use async programming as much as we can.
 
@@ -151,6 +165,7 @@ pytest
 faker
 aioresponses
 pytest-asyncio
+requests
 ```
 You can run this file:
 
@@ -168,6 +183,7 @@ Since we would use a back end API that does the actual answering of our queries,
 
 ```python
 
+# api_exception.py
 class APIException(Exception):
 
    def __init__(self, status_code, message, request_id):
@@ -176,6 +192,7 @@ class APIException(Exception):
        self.request_id = request_id
        super().__init__(f"API Error: {status_code} - {message} (Request ID: {request_id})")
 
+# api_response.py
 class APIResponse():
      def __init__(self, text, request_id):
            self.text = text
@@ -191,6 +208,8 @@ A success scenario has no issue.
 
 An ingenious way to overcome this defect is to override the default **ShowTypingMiddleware** by copying original code and fixing it.
 The fix is just to warp the bot's execution logic's call in a try-finally, to be able to clear the timer to stop it !
+
+Create a new file : **custom_typing_middleware.py**
 
 ```python
 
@@ -275,6 +294,76 @@ class CustomShowTypingMiddleware(ShowTypingMiddleware):
        return result
 
 ```
+
+
+### Create connection to read secrets Key Vault
+
+Create a secret utils to read all secrets from a given key vault.
+Assume we want to use existing app insights connection from back end system which also provided client with API URL and password.
+The bot's logs needs to be integrated in main workflow for seamless log tracing.
+
+But say, the bot itself uses its own Cosmos DB for persisting user states and infra as code would save the connection string in
+a key vault used and owned by bot (independent of others).
+
+Note here the use of 'managed identity' that has permissions to use key vault !
+When creating bot with IaC, we would create this identity and assign permissions later.
+
+
+```python
+"""
+Module to connect to Key vault to retrieve secrets
+Need GET & LIST permissions on the key vault to the managed_identity_client_id
+"""
+import os
+from logging import getLogger
+
+from azure.identity.aio import DefaultAzureCredential
+from azure.keyvault.secrets.aio import SecretClient
+
+LOGGER = getLogger("my_bot.secret_utils")
+
+
+async def get_app_insights_conn_string():
+    # an existing key vault with existing secret
+    key_vault_name = os.getenv("KEY_VAULT_NAME")
+    return await get_secrets(key_vault_name, 'app-insights-key')
+
+async def get_backend_api_secrets():
+    # an existing key vault with existing secret
+    key_vault_name = os.getenv("KEY_VAULT_NAME")
+    return await get_secrets(key_vault_name, 'back-end-api-url', 'back-end-api-passsword')
+
+
+async def get_cosmos_secrets():
+    # dedicated new key vault for bot which we create using IaC code later and add secrets
+    key_vault_name = os.getenv("BOT_KEY_VAULT_NAME")
+    return await get_secrets(key_vault_name, 'teams-bot-cosmos-endpoint', 'teams-bot-cosmos-key')
+
+
+async def get_secrets(key_vault_name, *secret_names):
+    # Retrieve Key Vault name from environment variable
+    managed_identity_client_id = os.getenv("AZURE_CLIENT_ID")
+    LOGGER.info(f"retrieving secrets from {key_vault_name}, for new connection,"
+                f" AZURE_CLIENT_ID retrieved {managed_identity_client_id is not None}")
+    secrets = []
+    try:
+        async with DefaultAzureCredential(managed_identity_client_id=managed_identity_client_id) as credential:
+            async with SecretClient(vault_url=f"https://{key_vault_name}.vault.azure.net",
+                                    credential=credential) as client:
+                for secret_name in secret_names:
+                    LOGGER.info(f' fetching value for {secret_name}')
+                    secret = await client.get_secret(secret_name)
+                    secrets.append(secret.value)
+    except Exception as e:
+        LOGGER.error(f"An error occurred while retrieving secrets from vault {key_vault_name}: {e}")
+        return (None,) * len(secret_names)
+
+    return tuple(secrets)
+
+```
+
+
+
 ### User state persistence 
 
 Since we deploy this on Azure, we need a robust storage for user state.
@@ -296,64 +385,70 @@ Cosmos comes in 2 flavours - serverless mode and provisioned throughput. Short s
 With PTU, the cosmos library has no issue. With the serverless option, client cannot set a throughput on the storage.
 SDK has a defect where it always uses **throughput=400** which makes the Cosmos calls fail !
 
-The fix along with the entire implementation is below. You need to set the environment for the Cosmos connection.
+The fix along with the entire implementation is below. You need to set the secrets for the Cosmos connection in the key vault for the bot (IaC will do this later)
 
 ```python
-
 """
 Module to configure Cosmos connection for storage
 """
 import os
+from logging import getLogger
 
 from azure.cosmos import PartitionKey
 from azure.cosmos.aio import CosmosClient, DatabaseProxy, ContainerProxy
 from botbuilder.azure import CosmosDbPartitionedStorage, CosmosDbPartitionedConfig
 from botbuilder.core import Storage
 
+from bots.secret_uils import get_cosmos_secrets
+
 # Constants for Cosmos DB configuration
 COSMOS_DB = 'mybot'
+
+if 'DEPLOYMENT_STAGE' in os.environ:
+    COSMOS_DB = COSMOS_DB + f'-{os.environ.get("DEPLOYMENT_STAGE")}'
+
 COSMOS_DB_CONTAINER = 'userstates'
+
+LOGGER = getLogger("my_bot.cosmos_storage")
 
 
 async def get_cosmos_storage() -> Storage:
-   """ create the cosmos DB and container for partitioned storage
+    """ create the cosmos DB and container for partitioned storage
 
-   Returns: CosmosDbPartitionedStorage
-   """
-   print("getting cosmos endpoint for new connection")
-   # Retrieve Cosmos DB credentials from environment variables
-   cosmos_endpoint = os.getenv("COSMOS_ENDPOINT")
-   cosmos_key = os.getenv("COSMOS_KEY")
+    Returns: CosmosDbPartitionedStorage
+    """
 
-   # Ensure the Cosmos DB credentials are available
-   if not cosmos_endpoint or not cosmos_key:
-       print("missing environment settings for CosmosDB connection !")
-       raise ValueError("COSMOS_ENDPOINT and COSMOS_KEY must be provided in the environment")
+    cosmos_endpoint, cosmos_key = await get_cosmos_secrets()
 
-   # Initialize Cosmos DB client
-   async with CosmosClient(cosmos_endpoint, cosmos_key) as cosmos_client:
+    # Ensure the Cosmos DB credentials are available
+    if not cosmos_endpoint or not cosmos_key:
+        LOGGER.error("missing secret settings for CosmosDB connection !")
+        raise ValueError("COSMOS_ENDPOINT and COSMOS_KEY must be provided in the secrets")
 
-       # Create database and container if they do not exist
-       database: DatabaseProxy = await cosmos_client.create_database_if_not_exists(id=COSMOS_DB)
-       _container: ContainerProxy = await database.create_container_if_not_exists(
-           id=COSMOS_DB_CONTAINER,
-           partition_key=PartitionKey(path='/id')
-       )
+    # Initialize Cosmos DB client
+    async with CosmosClient(cosmos_endpoint, cosmos_key) as cosmos_client:
+        # Create database and container if they do not exist
+        database: DatabaseProxy = await cosmos_client.create_database_if_not_exists(id=COSMOS_DB)
+        _container: ContainerProxy = await database.create_container_if_not_exists(
+            id=COSMOS_DB_CONTAINER,
+            partition_key=PartitionKey(path='/id')
+        )
 
-       # Configure Cosmos DB partitioned storage
-       config = CosmosDbPartitionedConfig(
-           cosmos_db_endpoint=cosmos_endpoint,
-           auth_key=cosmos_key,
-           database_id=COSMOS_DB,
-           container_id=COSMOS_DB_CONTAINER,
-           container_throughput=None,  # SDK defaults to 400 which is not supported on serverless Cosmos
-       )
+        # Configure Cosmos DB partitioned storage
+        config = CosmosDbPartitionedConfig(
+            cosmos_db_endpoint=cosmos_endpoint,
+            auth_key=cosmos_key,
+            database_id=COSMOS_DB,
+            container_id=COSMOS_DB_CONTAINER,
+            container_throughput=None,  # SDK defaults to 400 which is not supported on serverless Cosmos
+        )
 
-       # Create Cosmos DB storage instance
-       cosmos_storage = CosmosDbPartitionedStorage(config)
+        # Create Cosmos DB storage instance
+        cosmos_storage = CosmosDbPartitionedStorage(config)
 
-   print('cosmos connection initialized')
-   return cosmos_storage
+    LOGGER.info('cosmos connection initialized')
+    return cosmos_storage
+
 ```
 
 ### Conversation state persistence
@@ -373,21 +468,29 @@ We would use them to build streaming later.
 
 ```python
 
-from botbuilder.core import TurnContext
-from .api_exception import APIException
-import os
+
+from logging import getLogger
+
 import aiohttp
+from botbuilder.core import TurnContext
+
+from bots.api_exception import APIException
+from bots.api_response import APIResponse
+
+LOGGER = getLogger("my_bot.back_end_api")
 
 class MyRealBackEndAPIClient:
-   """Evaluates request and triggers (async) Azure function request."""
+    
+   def __init__(self, api_url=None, api_key=None):
 
-   def __init__(self):
-       self.API_BASE_URL = os.getenv("API_BASE_URL") ## base URL to the APIM endpoint including trailing /
-       self.SECRET = os.getenv("API_SECRET") ## can be APIM subscription key
-       # add others
+        self.API_BASE_URL = api_url
+        self.secret = api_key
+        # add others
        
        
-   async def query(self, question: str, turn_context: TurnContext, is_update_activity_supported=True):
+   async def query(self, user_profile: dict, question: str, turn_context: TurnContext, is_update_activity_supported=True):
+       bot_user_id = user_profile["bot_user_id"]
+       LOGGER.info(f"processing query {question} from user {bot_user_id}")
        async with aiohttp.ClientSession() as session:
            async with session.post(
                f"{self.API_BASE_URL}/query",
@@ -427,6 +530,7 @@ import asyncio
 import uuid
 
 from botbuilder.core import TurnContext
+from bots.api_response import APIResponse
 
 class MockedFixedApiClient:
 
@@ -434,7 +538,7 @@ class MockedFixedApiClient:
        self.mocked = True
        self.answer = load_markdown_file()
 
-   async def query(self, question: str, turn_context: TurnContext, is_update_activity_supported=True):
+   async def query(self, user_profile: dict, question: str, turn_context: TurnContext, is_update_activity_supported=True):
        request_id = uuid.uuid4()
        print(f"mocked mode {self.mocked}, returning fixed non streaming .md response "
              f" for this request id {request_id} in few seconds..")
@@ -449,6 +553,44 @@ def load_markdown_file():
        content = file.read()
    return content
 
+```
+
+### A class to handle user profile and other utitity functions.
+
+**utils.py**
+
+```python
+from logging import getLogger
+
+from botbuilder.core import TurnContext, StatePropertyAccessor, UserState
+
+BOT_EMULATOR_CHANNELS = ['webchat', 'emulator']
+LOGGER = getLogger("my_bot.utils")
+
+
+async def get_user_profile(turn_context: TurnContext, user_profile_accessor: StatePropertyAccessor):
+    # Retrieve the user profile from state storage, or initialize it if it doesn't exist
+    user_profile = await user_profile_accessor.get(turn_context, default_value_or_factory={})
+    if not user_profile:
+        user_profile = {}
+    # Ensure the user profile contains a bot_user_id
+    if "bot_user_id" not in user_profile:
+        user_profile["bot_user_id"] = turn_context.activity.from_property.id
+
+    # Save the updated user profile back to state storage
+    await user_profile_accessor.set(turn_context, user_profile)
+    return user_profile
+
+
+async def save_user_profile(turn_context: TurnContext,
+                            user_profile_accessor: StatePropertyAccessor,
+                            user_profile: dict,
+                            user_state: UserState):
+    # save to cache
+    await user_profile_accessor.set(turn_context, user_profile)
+    LOGGER.info(user_profile)
+    # persist to storage
+    await user_state.save_changes(turn_context)
 ```
 
 
@@ -469,6 +611,8 @@ So after a request-response cycle, if you perform action say -  delete an activi
 Below, **on_turn()** was overridden just to capture the channel, to configure if the channel supports update/delete of activity or not !
 This we would use for a workaround streaming solution that we build little later.
 
+Also, we try to create transaction trace for tracking in app insights.
+
 **my_bot.py**
 
 ```python
@@ -483,15 +627,19 @@ from botbuilder.schema import ChannelAccount
 from mocked.api.mock_fixed_api_client import MockedFixedApiClient
 
 from api.client import MyRealBackEndAPIClient
+from logging import getLogger
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind
+from utils import get_user_profile, save_user_profile
 
 channel_id = None
 
 # known emulator channels; update activity does not work for them
 # 'msteams' is the channel for MS Teams
 BOT_EMULATOR_CHANNELS = ['webchat', 'emulator']
+LOGGER = getLogger("my_bot.MyBot")
 
-
-def get_api():
+def get_api(api_url: str, api_key: str):
     run_mocked = os.environ.get("MOCKED_MODE", "false")
     if run_mocked.lower() == "true":
         print('running in mocked mode')
@@ -500,19 +648,20 @@ def get_api():
     else:
         # actual live call
         print('running live')
-        backend_api = MyRealBackEndAPIClient()
+        backend_api = MyRealBackEndAPIClient(api_url, api_key)
     return backend_api
 
 
 class MyBot(ActivityHandler):
-
-    def __init__(self, user_state: UserState, conversation_state: ConversationState):
-        self.backend_api = get_api()
+    
+    def __init__(self, user_state: UserState, conversation_state: ConversationState, api_url: str, api_key: str):
+        self.backend_api = get_api(api_url, api_key)
         self.does_channel_supports_update_activity = True
         self.user_state = user_state
         self.conversation_state = conversation_state
         # create UserProfile property within the UserState.
         self.user_profile_accessor: StatePropertyAccessor = self.user_state.create_property("UserProfile")
+        self.tracer = trace.get_tracer("my.my_bot")
 
     async def on_turn(self, turn_context: TurnContext):
         # This method is called for every activity
@@ -529,9 +678,8 @@ class MyBot(ActivityHandler):
     async def on_members_added_activity(self, members_added: [ChannelAccount], turn_context: TurnContext):
         for member in members_added:
             if member.id != turn_context.activity.recipient.id:
-                await turn_context.send_activity("Welcome message for the user")
-                print(f'added member {member.id}')
-                # clear your profile for every new member added activity (can happen when doing a new deployment, and user is then added again and hence needs to reset and restart !
+                await turn_context.send_activity("Welcome message...")
+                LOGGER.info(f'added member {member.id}')
                 await self.reset_user_state(turn_context)
 
     async def reset_user_state(self, turn_context: TurnContext):
@@ -549,15 +697,20 @@ class MyBot(ActivityHandler):
         # store additional data or payloads that might be sent along with the activity. 
         additional_data = turn_context.activity.value
         message_id = turn_context.activity.id
-        print(f'received message with id: {message_id}')
-        user_profile = await self.get_user_profile(turn_context, self.user_profile_accessor)
-        return await self.handle_query(turn_context, user_input, user_profile)
+        
+        with self.tracer.start_as_current_span(name=f"my_bot.on_message_activity[{message_id}]",
+                                               kind=SpanKind.CLIENT):
+            LOGGER.info(f'received message with id: {message_id}')
+            user_profile = await get_user_profile(turn_context, self.user_profile_accessor)
+
+            return await self.handle_query(turn_context, user_input, user_profile)
 
 
     async def handle_query(self, turn_context: TurnContext, user_input: str, user_profile: dict):
 
         # send the TurnContext also, to allow sending message activities on the context when using streaming mode
-        api_response: APIResponse = await self.backend_api.query(question=user_input,
+        api_response: APIResponse = await self.backend_api.query(user_profile=user_profile,
+                                                 question=user_input,
                                                  turn_context=turn_context,
                                                  is_update_activity_supported=self.does_channel_supports_update_activity)
         # exception from API would be handled by app.py-> on_error method
@@ -572,51 +725,66 @@ class MyBot(ActivityHandler):
         # example - api call sent back a request id that I persist
         user_profile["request_id"] = request_id
         await save_user_profile(turn_context, self.user_profile_accessor, user_profile, self.user_state)
+```
 
-    async def get_user_profile(turn_context: TurnContext, user_profile_accessor: StatePropertyAccessor):
-       # Retrieve the user profile from state storage, or initialize it if it doesn't exist
-       user_profile = await user_profile_accessor.get(turn_context, default_value_or_factory={})
-       if not user_profile:
-           user_profile = {}
-       # Ensure the user profile contains a bot_user_id
-       if "bot_user_id" not in user_profile:
-           user_profile["bot_user_id"] = turn_context.activity.from_property.id
-   
-       # Save the updated user profile back to state storage
-       await user_profile_accessor.set(turn_context, user_profile)
-       return user_profile
 
-   async def save_user_profile(turn_context: TurnContext,
-                               user_profile_accessor: StatePropertyAccessor,
-                               user_profile: dict,
-                               user_state: UserState):
-       # save to cache
-       await user_profile_accessor.set(turn_context, user_profile)
-       print(user_profile)
-       # persist to storage - cosmos
-       await user_state.save_changes(turn_context)
+## Configure application insights
 
+**app_insights.py** - configure opentelemetry for the bot.
+Feel free to change as desired.
+
+```python
+
+from azure.monitor.opentelemetry import configure_azure_monitor
+
+from bots.secret_uils import get_app_insights_conn_string
+
+
+async def configure_monitoring():
+    # get back a tuple of array
+    app_insights_conn_string = await get_app_insights_conn_string()
+    app_insights_conn_string = app_insights_conn_string[0]
+    configure_azure_monitor(logger_name="my_bot",
+                            connection_string=app_insights_conn_string,
+                            instrumentation_options={"azure_sdk": {"enabled": False},
+                                                     "flask": {"enabled": False},
+                                                     "psycopg2": {"enabled": False},
+                                                     "django": {"enabled": False},
+                                                     "fastapi": {"enabled": False}
+                                                     },
+                            disable_logging=False,
+                            disable_tracing=False,
+                            disable_metrics=False
+                            )
+```
+
+
+## Prepare main application configuration
+
+**config.py**
+
+Web App environment settings would contain these settings when we deploy the infrastructure.
+
+```python
+import os
+
+class DefaultConfig:
+    """ Bot Configuration """
+    PORT = 3978
+
+    # these variables will set the path for credentials workflow
+    # /site-packages/botbuilder/integration/aiohttp/configuration_service_client_credential_factory.py
+
+    # these are set in environment of the Azure Web App where this code gets deployed
+    APP_ID = os.environ.get("MicrosoftAppId", "")
+    APP_PASSWORD = os.environ.get("MicrosoftAppPassword", "")
+
+    APP_TYPE = os.environ.get("MicrosoftAppType", "MultiTenant")
+    APP_TENANTID = os.environ.get("MicrosoftAppTenantId", "")
 ```
 
 
 ## Integrate it in main app
-
-**config.py**
-
-```python
-import os
-class DefaultConfig:
-    """ Bot Configuration """
-
-    PORT = 3978
-
-    # these are set in environment of the Azure Web App where this code gets deployed
-    # when creating e Azure Web App service, app id/password are needed.
-    # not needed for emulator
-    APP_ID = os.environ.get("MicrosoftAppId", "")
-    APP_PASSWORD = os.environ.get("MicrosoftAppPassword", "")
-```
-
 
 **app.py** - main entry point for the Bot whether you run locally on an emulator or use web chat on Azure Bot service
 
@@ -652,7 +820,7 @@ import sys
 import traceback
 from datetime import datetime, timezone
 from http import HTTPStatus
-
+from logging import getLogger
 from aiohttp import web
 from aiohttp.web import Request, Response, json_response
 from botbuilder.core import (
@@ -668,9 +836,19 @@ from bots import MyBot
 from bots.api_exception import APIException
 from bots.cosmos_storage import get_cosmos_storage
 from bots.custom_typing_middleware import CustomShowTypingMiddleware
-from config import DefaultConfig
 
+from bots.secret_uils import get_backend_api_secrets
+from config import DefaultConfig
+from app_insights import configure_monitoring
 load_dotenv()
+
+
+
+LOGGER = getLogger("my_bot.app")
+logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+
+
+asyncio.run(configure_monitoring())
 
 
 # Catch-all for errors.
@@ -729,9 +907,12 @@ async def init_bot():
    # needed to be offloaded to Cosmos
    user_state = UserState(storage)
 
+   
+   api_url, api_password = await get_backend_api_secrets()
+   
    # this is called in azure deployment
    # Bot instance initially None
-   bot = MyBot(user_state, conversation_state)
+   bot = MyBot(user_state, conversation_state, api_url, api_password)
    print('bot created')
    return bot
 
@@ -777,8 +958,10 @@ if __name__ == "__main__":
    web.run_app(APP, host="localhost", port=CONFIG.PORT)
 ```
 
-You should be ready to go with mocked or real mode, with Cosmos integration and a working clean Bot with Python SDK. We will use **--api-url** a little later
-to mock a streaming back end API, and test the streaming as far as we can before you move the tested code back to main back end API client.
+You should be ready to go with mocked or real mode, with Cosmos & App Singhts integration and a working clean Bot with Python SDK.
+We will use **--api-url** a little later to mock a streaming back end API, and test the streaming as far as we can before you move
+the tested code back to main back end API client. Example demonstrates how to capture a streaming back end API's response on bot interface; but it depends on
+your back end API on whether and how it implements streaming !
 
 
 
@@ -793,7 +976,7 @@ Keep an eye on updates on examples, if you can find real streaming example.
 [Python lib for streaming in Bot](https://pypi.org/project/botframework-streaming/)
 
 At the moment, this library seems to be either not in use or even under development. The links here to the source code also do not work !!
-Surprisingly, even for the C# version, no concrete example and guide was available.
+Surprisingly, even for the C# version, no concrete example and guide was available and looks to be in total mess.
 
 ## STREAMING MODE - Workaround
 
@@ -822,7 +1005,7 @@ we send to the bot interface:
 and so on.
 
 
-This should work but of course, update of activity is not possible as on date on emulator or web chat, so we cannot really test it 
+This **wil** work but of course, update of activity is not possible as on date on emulator or web chat, so we cannot really test it 
 unless we integrate this with "msteams" channel. What we would experience with the example below on emulator/web chat is new activities being spit out on the
 channel, each having additional content !
 
@@ -867,7 +1050,7 @@ The mocked API below based on the "Accept" header, either streams the data or ju
 {"content":"**","ended":true,"type":"md"}
 ```
 
-**app.py**
+**mocked_streaming_api.py**
 ```python
 """
 this program simulates a local Flask app based back end AP
@@ -943,7 +1126,7 @@ if __name__ == '__main__':
 
 ```
 
-**mocked_streaming_api.py**
+**mocked_streaming_api_client.py**
 
 
 ```python
@@ -960,16 +1143,17 @@ from bots.api_exception import APIException
 
 class MockedStreamingApiClient:
     
-   def __init__(self):
-       self.API_BASE_URL = os.getenv("API_BASE_URL") ## base URL to the APIM endpoint including trailing /
-       self.SECRET = os.getenv("API_SECRET") ## can be APIM subscription key
-       self.mocked = True
-       # control streaming behavior itself with these environment properties, without need to re-deploy code..
-       self.stream_response = os.getenv("STREAM", "true") == "true"
-       self.stream_chunk_size = int(os.getenv("STREAM_CHUNK_COLLECTION_SIZE", "8"))
+   def __init__(self, api_url=None, api_key=None):
+        self.API_BASE_URL = api_url
+        self.secret = api_key
+        self.mocked = True
+        # control streaming behavior itself with these environment properties, without need to re-deploy code..
+        self.stream_response = os.getenv("STREAM", "true") == "true"
+        self.stream_chunk_size = int(os.getenv("STREAM_CHUNK_COLLECTION_SIZE", "8"))
        
-       
-   async def query(self, question: str, turn_context: TurnContext, is_update_activity_supported=True):
+   async def query(self, user_profile: dict, question: str, turn_context: TurnContext, is_update_activity_supported=True):
+       bot_user_id = user_profile["bot_user_id"]
+       print(f"processing query {question} from user {bot_user_id}")
        async with aiohttp.ClientSession() as session:
            async with session.post(
                f"{self.API_BASE_URL}/query",
@@ -1115,7 +1299,8 @@ Press CTRL+C to quit
 
 
   ```python
-  def get_api():
+  import os
+  def get_api(api_url: str, api_key: str):
       run_mocked = os.environ.get("MOCKED_MODE", "false")
       if run_mocked.lower() == "true":
           print('running in mocked mode')
@@ -1129,7 +1314,7 @@ Press CTRL+C to quit
       else:
           # actual live call
           print('running live')
-          backend_api = MyRealBackEndAPIClient()
+          backend_api = MyRealBackEndAPIClient(api_url, api_key)
       return backend_api
   ```
 
@@ -1147,3 +1332,17 @@ Press CTRL+C to quit
 Apart from emulator, you can look at these options:
 
 [Bot Test options](https://learn.microsoft.com/en-us/azure/bot-service/channel-connect-teams?view=azure-bot-service-4.0)
+
+
+### How to you test your app that you hosted ?
+
+To test the api with an external client which is not emulator or test web chat, we need a way to authenticate to the API.
+However, a very smple naive way is to test GET on http://hosteddomain/api/messages, and expect 405 !
+This does work always, as it ensures app is initialized !!
+
+
+## Building Infra as Code to deploy what we built
+
+See this blog to continue building BICEP templates for this solution.
+
+[Infrastructure as Code with Azure Bicep - deploying app service, bot service with several Azure integrations](microsoft_bicep)
