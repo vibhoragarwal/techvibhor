@@ -1340,6 +1340,49 @@ To test the api with an external client which is not emulator or test web chat, 
 However, a very smple naive way is to test GET on http://hosteddomain/api/messages, and expect 405 !
 This does work always, as it ensures app is initialized !!
 
+Add a **tests/deploy/test_deploy.py**.
+
+Here a '405' from a GET request is passed - this is good enough for us to know the app is up
+
+```python
+import os
+import time
+
+import requests
+
+
+def test_get_app_up_and_running():
+    app_service_name = os.environ.get("APP_SERVICE_NAME")
+    assert app_service_name, "APP_SERVICE_NAME not set in env to create app deploy URL for tests !"
+    slot = os.environ.get("APP_SERVICE_DEPLOYMENT_SLOT", None)
+    if slot and slot == 'staging':
+        app_service_name += '-staging'
+        print('testing staging slot URL')
+    url = f'https://{app_service_name}.azurewebsites.net/api/messages'
+    print(f'test url is {url}')
+    # takes hell lot of time to make the webapp functional
+
+    timeout = 400  # Total timeout for the entire check
+    check_interval = 5  # Time to wait between checks in seconds
+    elapsed_time = 0
+
+    while elapsed_time < timeout:
+        try:
+            response = requests.get(url, timeout=check_interval)
+            assert response.status_code == 405
+            print("Test passed: Received 405 Method Not Allowed.")
+            break
+        except requests.exceptions.Timeout:
+            print("Request timed out, checking again...")
+        except AssertionError:
+            print(f"Received a different status code {response.status_code}, retrying...")
+
+        time.sleep(check_interval)
+        elapsed_time += check_interval
+
+    if elapsed_time >= timeout:
+        assert False, "Test failed: Timeout reached without receiving 405."
+```
 
 ## Building Infra as Code to deploy what we built
 
