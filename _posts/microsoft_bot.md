@@ -1148,8 +1148,8 @@ class MockedStreamingApiClient:
         self.secret = api_key
         self.mocked = True
         # control streaming behavior itself with these environment properties, without need to re-deploy code..
-        self.stream_response = os.getenv("STREAM", "true") == "true"
-        self.stream_chunk_size = int(os.getenv("STREAM_CHUNK_COLLECTION_SIZE", "8"))
+        self.stream_response = os.getenv("STREAM_RESPONSE", "true") == "true"
+        self.stream_chunk_size = int(os.getenv("STREAM_RESPONSE_CHUNK_COLLECTION_SIZE", "8"))
        
    async def query(self, user_profile: dict, question: str, turn_context: TurnContext, is_update_activity_supported=True):
        bot_user_id = user_profile["bot_user_id"]

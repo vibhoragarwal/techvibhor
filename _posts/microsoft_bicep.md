@@ -501,6 +501,8 @@ var defaultAppSettings = {
   MicrosoftAppPassword: ''
   PRE_BUILD_COMMAND: 'python3 -m pip install --upgrade pip'
   SCM_DO_BUILD_DURING_DEPLOYMENT: 'true'
+  STREAM_RESPONSE: 'true'
+  STREAM_RESPONSE_CHUNK_COLLECTION_SIZE: 8
 }
 
 
