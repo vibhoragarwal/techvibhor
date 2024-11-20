@@ -367,8 +367,8 @@ jobs:
                  location="${{ vars.LOCATION }}" \
                  deploymentStage="${{ inputs.deployment_stage }}" \
                  appInsightsKey="${{ secrets.APP_INSIGHTS_KEY }}" \
-                 productAssistAPIBaseURL="${{ secrets.PRODUCT_ASSIST_API_BASE_URL }}" \
-                 productAssistBotSubscriptionKey="${{ secrets.PRODUCT_ASSIST_TEAMS_BOT_SUBSCRIPTION_KEY }}" \
+                 backEndAPIBaseURL="${{ secrets.BACK_END_API_URL }}" \
+                 backEndAPIKey="${{ secrets.BACK_END_API_KEY }}" \
                  userAppSettings="{ \
                   \"SOME_OTHER_APP_SETTING\": \"${{ vars.SOME_OTHER_APP_SETTING }}\", \
                   \"COMMIT_ID\":  \"${{ steps.get_short_commit_hash.outputs.SHORT_COMMIT_ID}}\", \

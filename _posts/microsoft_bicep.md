@@ -105,7 +105,7 @@ resource appInsightsSecret 'Microsoft.KeyVault/vaults/secrets@2024-04-01-preview
 }
 
 // Store the  API URL
-resource backEndAPIKeySecret 'Microsoft.KeyVault/vaults/secrets@2024-04-01-preview' = {
+resource backEndAPIUrlSecret 'Microsoft.KeyVault/vaults/secrets@2024-04-01-preview' = {
   name: 'back-end-api-url'
   parent: botKeyVault
   properties: {
@@ -117,7 +117,7 @@ resource backEndAPIKeySecret 'Microsoft.KeyVault/vaults/secrets@2024-04-01-previ
 }
 
 // Store the  API subscription key for teams bot
-resource prodAssistSubscriptionSecret 'Microsoft.KeyVault/vaults/secrets@2024-04-01-preview' = {
+resource backEndAPIKeySecret 'Microsoft.KeyVault/vaults/secrets@2024-04-01-preview' = {
   name: 'back-end-api-passsword'
   parent: botKeyVault
   properties: {
@@ -271,7 +271,7 @@ resource userAssignedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@
 }
 
 // in the key vault that comes from different RG, enable if needed, accept kvResourceGroupName, kvResourceGroupName here, and pass from caller
-// module productAssistantRoleAssignmentModule '../managed_identity_roles/managedIdentityRoles.bicep' = {
+// module someOtherRoleAssignmentModule '../managed_identity_roles/managedIdentityRoles.bicep' = {
 //   name: 'otherRGRoleAssignmentModule'
 //   scope: resourceGroup(kvResourceGroupName) // this is in some other RG
 //   params: {
