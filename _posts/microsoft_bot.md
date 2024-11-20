@@ -91,17 +91,17 @@ Here are our requirements:
  - use User Managed Service Identity for the bot
  - handle exceptions from BOT as well as the back end API gracefully
  - fix SDK issues that were experienced with this **not so robust** framework
- - some tests around the bot (will leave up to you to use **pytest** and add them)
- - use python 3.11 (instead of default provided in sample)
+ - some unit & deploy tests around the bot (will leave up to you to use **pytest** and add them)
+ - use python 3.11 (instead of default provided in sample), upgraded dependencies etc
  - streaming - no clue if SDK really supports it or not ? But here, we implement a solid workaround **working** and **production tested** solution !
  - understand & implement web app and bot service deployment
 
 Also, some Azure integrations:
 
  - robust persistence of user state (state management) on Azure Cosmos (you can use Blob)
- - and read Cosmos DB connection details from a key vault created for the bot
- - integrate with existing App Insights instance to send the logs
- - integrate bot with back end API (using a secret) that would actually serve user queries
+ - and read Cosmos DB connection details from a Key Vault created for the bot
+ - integrate with existing App Insights instance to send the logs, read the connection string from this Key Vault secret
+ - integrate bot with back end API (URL & key to API as Key Vault secrets) that would actually serve user queries
 
 
 Add some tests:
@@ -324,13 +324,13 @@ LOGGER = getLogger("my_bot.secret_utils")
 
 
 async def get_app_insights_conn_string():
-    # an existing key vault with existing secret
-    key_vault_name = os.getenv("KEY_VAULT_NAME")
+    # dedicated new key vault for bot which we create using IaC code later and add secrets
+    key_vault_name = os.getenv("BOT_KEY_VAULT_NAME")
     return await get_secrets(key_vault_name, 'app-insights-key')
 
 async def get_backend_api_secrets():
-    # an existing key vault with existing secret
-    key_vault_name = os.getenv("KEY_VAULT_NAME")
+    # dedicated new key vault for bot which we create using IaC code later and add secrets
+    key_vault_name = os.getenv("BOT_KEY_VAULT_NAME")
     return await get_secrets(key_vault_name, 'back-end-api-url', 'back-end-api-passsword')
 
 
@@ -1339,6 +1339,7 @@ Apart from emulator, you can look at these options:
 To test the api with an external client which is not emulator or test web chat, we need a way to authenticate to the API.
 However, a very smple naive way is to test GET on http://hosteddomain/api/messages, and expect 405 !
 This does work always, as it ensures app is initialized !!
+This test could take several minutes (about 10 minutes) for the app to be initialized to be able to give us back a 405.
 
 Add a **tests/deploy/test_deploy.py**.
 

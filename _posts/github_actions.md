@@ -13,7 +13,7 @@ ogImage:
 
 ![](/assets/blog/github_actions/github_actions.png) 
 
-# What are we deploying using Bicep
+# What are we deploying using GitHub Actions
 
 See here on the Bot framework based application that we had built so far & Bicep scripts to build the infrastructure
 
@@ -23,6 +23,9 @@ Now we deploy both infra and the application code using GitHub Actions
 
 [Infrastructure as Code with Azure Bicep - deploying app service, bot service with several Azure integrations](microsoft_bicep)
 
+I assume that you have Corporate GitHub account for which these scripts are relevant 'as is'. Otherwise, you may have to make minor tweaks
+to send additional params, but this blog would give sufficient insights to prepare your workflow.
+
 ## What we would achieve
 
 Use GitHub actions (use an organizational account or even personal) to deploy Bot on Azure with several Azure service integrations.
@@ -30,11 +33,11 @@ Use GitHub actions (use an organizational account or even personal) to deploy Bo
 Using best practices and advanced concepts:
 
  - Use Azure's OpenID credentials to connect GitHub to Azure
- - Use built bicep templates (from previous step) that accepts few parameters
- - Deploy on Azure, app service, bot service and create several other resources
- - Use deployment slots feature for both staging & prod deployments
+ - Use developed bicep templates (from previous step) that accepts few parameters
+ - Deploy on Azure -  app service, bot service with several other resources
  - Support staging and production deployments
- - Deploy on production only on manual approval
+ - Use deployment slots feature for both staging & productions deployments
+ - Configure GitHub to deploy on production only on manual approval
  - Ensure same code gets deployed on both environments (possible that you deploy COMMIT_A on staging, a PR is merged to main meanwhile, and your production stage deployment
    picks up COMMIT_B and ends up deploying non-tested code to production !!)
  - Ensure no duplication of workflow steps
@@ -50,6 +53,11 @@ This is a 2-step process - generate a client ID (with credentials), configure Op
 You would need 2 different set of credentials and configuration for your 2 different environments (subscriptions) - staging, production.
 These steps are for staging environment Azure subscription id <STAGING_SUBS_ID> and for <ENVIRONMENT> as staging
 
+**IMPORTANT NOTE**: Service Principal in Azure is a tenant level concept, not subscription level !
+So if you have single tenant with 2 subscriptions (one for staging, one for production etc), then service principal
+with a given name even when using scopes as different subscriptions, would generate/update same client Id !!
+This means you should use different names for different environments, so that you can configure them differently.
+
 ### STEP 1: Generate Service Principal with RBAC access
 
 Create a client application with scopes chosen as desired.
@@ -60,9 +68,16 @@ Here we give access to this service principal **contributor** permissions across
 az ad sp create-for-rbac --name teams-bot --role contributor --scopes /subscriptions/<STAGING_SUBS_ID> --json-auth
 ```
 
+For production:
+
+```bash
+# need across subscription as we update resources such as Key Vault permissions on a different Resource Group
+az ad sp create-for-rbac --name prod-teams-bot --role contributor --scopes /subscriptions/<PRODSUBS_ID> --json-auth
+```
+
 Note down the client ID, tenant ID & subscription ID.
 
-### STEP 2: Generate Service Principal with RBAC access
+### STEP 2: Generate OpenID federation for the service principal
 
 Review and replace for your org/repo/branch.
 
@@ -78,6 +93,23 @@ az ad app federated-credential create \
         "description": "federated identity for teams bot"
 }'
 ```
+
+For production:
+
+```bash
+# use the client ID from above and create federation for github actions
+az ad app federated-credential create \
+      --id <PROD_CLIENT_ID> \
+      --parameters '{
+        "name": "my-prod-fed-credential",
+        "issuer": "https://token.actions.githubusercontent.com",
+        "subject": "repo:<ORG>/<REPO>>:environment:production",
+        "audiences": ["api://AzureADTokenExchange"],
+        "description": "federated identity for prod teams bot"
+}'
+```
+
+
 You can also login to entra.microsoft.com and configure this client for OpenID access in a nice User Interface.
 
 Now when using federated credentials, you can configure GitHub without client password to login to Azure with these parameters:
@@ -144,18 +176,18 @@ So, here is the main workflow:
  - in the next job for 'deploy-staging', make it depends on the check-out job
  - 'uses' the 'reusable' or **called workflow** that we would build later, to actually use steps from
  - the main input we send here is 'environment'. The name here can be 'staging' or 'production' and refers to the names that we created on GitHub-> settings-> environments
- - send inputs to reusable workflow - commit hash (for the reusable workflow to check out and work on this commit only), deployment stage
- - no need to explicitly define secrets. Use 'inherit' to allow reusable workflows to use them based on GitHub environment
+ - send inputs to reusable workflow - commit hash (for the reusable workflow to check out and work on this commit only !), deployment stage
+ - no need to explicitly send secrets. Use 'inherit' to allow reusable workflows to use them based on GitHub environment
  - prepare 'deploy-production' job now using workflow again
 
 Note the differences in the staging verses production deployment
 
  - deployment_stage is different, and this would be used to set up an environment variable for web app for it to use within code
  - note the depends on; production deployment depends on staging deployment as well as step that sets commit hash. Of course, production should depend on success of staging deployment
-   but also the 'get-commit-hash' step as this step has the output that contains the commit hash to use for the called workflow to chec kout code from !
+   but also the 'get-commit-hash' step as this step has the output that contains the commit hash to use for the called workflow to check out code from !
    This ensures both staging and production deployment use same version of code to deploy, even if when running a long workflow, new commits may happen to same branch.
- - secrets are different, environment specific secrets will be used in called workflow if it points to the right environment
- - and hence the environment is different, name as the GitHub environment
+ - secrets are different, **environment specific secrets** will be used in called workflow if it points to the right environment
+ - and hence the environment input is different, name as the GitHub environment that we prepared earlier
 
 You CANNOT use the 'environment' in the calling workflow with 'uses'. Only called workflow can refer to an environment !
 
@@ -216,6 +248,7 @@ jobs:
     name: Deploy Teams Bot to production
     uses: ./.github/workflows/deploy_teams_bot_workflow.yml
     needs: [deploy-staging, get-commit-hash]
+    if: false
     with:
       environment: production
       commit_hash: ${{needs.get-commit-hash.outputs.commit_hash}}
@@ -257,6 +290,7 @@ that Azure has etc.
    It takes 10-15 minutes for app for it to be up & running !
    The test itself needs APP_SERVICE_DEPLOYMENT_SLOT in environment which we set up just after web app deploy.
  - swap the slots to deploy staging slot code to production, set the slot in environment, log out from Azure and re-run deploy tests on the deployment in this slot
+ - deploy tests would now take no time as the app is initialized, and just the traffic has been redirected with slots !
 
 
 ```yaml
@@ -292,8 +326,9 @@ jobs:
           ref: ${{ inputs.commit_hash }}
 
       - name: Get short commit hash
+        id: get_short_commit_hash
         run: |
-          echo "SHORT_COMMIT_ID=$(git rev-parse --short=7 ${{ github.sha }})" >> $GITHUB_ENV
+          echo "SHORT_COMMIT_ID=$(git rev-parse --short=7 ${{ github.sha }})" >> $GITHUB_OUTPUT
 
       - name: Set up Python ${{ vars.PYTHON_VERSION }}
         uses: actions/setup-python@v4
@@ -316,6 +351,7 @@ jobs:
 
       # https://github.com/Azure/azure-cli/issues/30147
       # may see some crypto warnings
+      # escape params - some may be missed or incorrectly passed with delimiters
       - name: Deploy teams bot infra
         uses: azure/cli@v2
         with:
@@ -328,15 +364,15 @@ jobs:
                 --query "properties.outputs" \
                 --output json \
                 --parameters params.bicepparam \
-                 location=${{ vars.LOCATION }} \
-                 deploymentStage=${{ inputs.deployment_stage }} \
-                 keyVaultName=${{ vars.KEY_VAULT_NAME }} \
-                 keyVaultResourceGroupName=${{ vars.KEY_VAULT_RESOURCE_GROUP_NAME }} \
+                 location="${{ vars.LOCATION }}" \
+                 deploymentStage="${{ inputs.deployment_stage }}" \
+                 appInsightsKey="${{ secrets.APP_INSIGHTS_KEY }}" \
+                 productAssistAPIBaseURL="${{ secrets.PRODUCT_ASSIST_API_BASE_URL }}" \
+                 productAssistBotSubscriptionKey="${{ secrets.PRODUCT_ASSIST_TEAMS_BOT_SUBSCRIPTION_KEY }}" \
                  userAppSettings="{ \
-                  \"COMMIT_ID\":  \"${{ env.SHORT_COMMIT_ID}}\", \
-                  \"DEPLOYMENT_STAGE\":  \"${{ inputs.deployment_stage}}\", \
-                  \"KEY_VAULT_NAME\": \"${{ vars.KEY_VAULT_NAME }}\", \
-                  \"KEY_VAULT_RESOURCE_GROUP_NAME\": \"${{ vars.TEAMS_BOT_RESOURCE_GROUP_NAME }}\" \
+                  \"SOME_OTHER_APP_SETTING\": \"${{ vars.SOME_OTHER_APP_SETTING }}\", \
+                  \"COMMIT_ID\":  \"${{ steps.get_short_commit_hash.outputs.SHORT_COMMIT_ID}}\", \
+                  \"DEPLOYMENT_STAGE\":  \"${{ inputs.deployment_stage}}\" \
                 }"
 
       - name: Retrieve teams bot app name
@@ -356,6 +392,7 @@ jobs:
       # https://github.com/Azure/azure-cli/issues/29003  - infinite polling status issue or 202 dpeloyment staus issue
       # INFINITE time to deploy the webapp :( horrible !!
       # Another issue: this may not trigger the deployment at all ! and just fail querying deployment API.
+      # Another issue: intermittent..ERROR: Another deployment is in progress
       # try 2.66.0
       - name: Deploy bot code using az 2.66.0 to azure web app (staging slot) - ${{ env.APP_SERVICE_NAME }}
         uses: azure/cli@v2
@@ -400,7 +437,7 @@ jobs:
 
 ## Manual Release to Production
 
-Once the deployment to staging is complete, we need to stop automatic production deployment as we need manual approval as per our requirements.
+Once the deployment to staging is complete, we need to **halt** automatic production deployment as we need manual approval as per our requirements.
 You can configure this set up on GitHub console for **production** environment to add one or more approvers.
 
 ![github_prod_approval.png](/assets/blog/github_actions/github_prod_approval.png)

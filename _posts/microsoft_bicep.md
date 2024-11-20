@@ -23,6 +23,13 @@ See here on the Bot framework based application that we had built so far.
 Microsoft documentation provides basic default ARM templates, which we would replace with Bicep scripts, with several
 integrations with Azure services, in a modular design covering several aspects of IaC development with Azure bicep.
 
+# Who is deploying
+
+As a developer, you may run deployment scripts and need at least "Contributor" access **over the subscription**.
+Later if you are deploying in CI/CD pipeline, the service principal needs to have "Contributor" access **over the subscription**
+Reason is that we could limit access over just the Resource Group where we deploy the bot, but we may need to access say a Key Vault from a different RG.
+
+
 ## What we would achieve
 
 Build IaC using Bicep the Bot web app (app service) along with the Bot service.
@@ -33,11 +40,9 @@ We add a bit of complexity also along with the necessary to do things, such as:
  - create app service (web app)
  - create bot service
  - create serverless cosmos DB to persist bot's user state
- - create key vault to persist Cosmos DB connection as secrets, and later use them in bot
- - assign set required 'user' permissions to the UserAssignedMSI on the key vault
- - also lookup and existing key vault ( assume a different RG for this) and assign 'user' permissions, which bot needs to access
-
-Existing key vault may be needed to say lookup API credentials to invoke back end as an example
+ - create key vault to persist Cosmos DB connection as secrets, also back end API url & secret and later use them in bot
+ - use an existing app insights instance to connect the bot, persist the existing connection string in Key Vault as a secret
+ - assign required 'user' permissions to the UserAssignedMSI on the key vault
 
 Assume the resource group where we create bot infra exists already, and we skip creation for it.
 You may add it.
@@ -47,6 +52,7 @@ Also, few more requirements:
  - modular design
  - abstracted complexity from module callers
  - comprehensive tagging of resources
+ - use latest Azure API's in biceps
 
 
 ## Create modules/key_vault/keyVault.bicep
@@ -60,6 +66,11 @@ Key Vault is a global Azure service
 param location string
 param resourcePrefix string
 param commonTags object
+param appInsightsKey string
+param backEndAPIBaseURL string
+param backEndAPIKey string
+
+
 
 var botKeyVaultName = '${resourcePrefix}-kv'
 
@@ -77,20 +88,59 @@ resource botKeyVault 'Microsoft.KeyVault/vaults@2024-04-01-preview' = {
     tenantId: subscription().tenantId
     accessPolicies: []
     createMode: 'default'
-    enableSoftDelete: false // delete always full, we can always recreate...
+    enableSoftDelete: false // delete always full, we can recreate...
+  }
+}
+
+// Store the App Insights Conn String
+resource appInsightsSecret 'Microsoft.KeyVault/vaults/secrets@2024-04-01-preview' = {
+  name: 'app-insights-key'
+  parent: botKeyVault
+  properties: {
+    value: backEndAPIKey
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
+// Store the  API URL
+resource backEndAPIKeySecret 'Microsoft.KeyVault/vaults/secrets@2024-04-01-preview' = {
+  name: 'back-end-api-url'
+  parent: botKeyVault
+  properties: {
+    value: backEndAPIBaseURL
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
+// Store the  API subscription key for teams bot
+resource prodAssistSubscriptionSecret 'Microsoft.KeyVault/vaults/secrets@2024-04-01-preview' = {
+  name: 'back-end-api-passsword'
+  parent: botKeyVault
+  properties: {
+    value: backEndAPIKey
+    attributes: {
+      enabled: true
+    }
   }
 }
 
 
+
+
 output botKeyVaultName string = botKeyVault.name
+
 ```
 
 
-## Create modules/managed_identity_roles/managedIdentityRoles.bicep
+## Create modules/managed_identity_roles/managedIdentityRoles.bicep [wont be used]
 
 
-Assuming existing key vault, that our bot's managed identity wants to use, is configured with Vault Access Policy. 
-All we want is to list & get secrets.
+If need be, assuming with an existing key vault, that our bot's managed identity wants to use, is configured with Vault Access Policy. 
+All we want is to list & get secrets from that Key Vault, then this might be needed.
 
 ```yaml 
 param keyVaultName string
@@ -188,15 +238,28 @@ Create the managed identity and assign permissions to this.
  - permissions to use Key Vault created for bot secrets
  - permissions to use Key Vault that was existing to be used
 
-```yaml 
+Important thing to note here is this identity's **client id** would be used in the Bot service's **Microsoft App ID**.
+Now we would later use this identifier to create a Teams App that we would deploy to teams. The app is nothing but a bundle of manifest file (JSON)
+and icons. Now, you may have restrictions to deploy this again and again, and if you delete the RG or this identity, when scripts are re-run they would
+generate a new identity, and hence a new **client id** which becomes a new **Microsoft App ID** for the bot, which means now, the Teams App needs re-deployment to work !
+
+Now you can manually lock the deletion of this identity but you need "owner" permissions or additional permissions with Contributor access.
+Here we do not use Bicep to lock the deletion, but use portal to lock it !
+
+Secondly, we don not want the name to be dynamic - running multiple times with changing names would cause new identity to be created and the same issue !
+Hence, as an exception, we **fix the name** of this identity across environments.
+
+
+```yaml
 param location string
 param resourcePrefix string
 param commonTags object
-param keyVaultName string
 param teamsBotKeyVaultName string
-param kvResourceGroupName string
 
-var managedIdentityName = '${resourcePrefix}-managed-identity'
+// managed identity be locked for deletion as this would generate client ID (Microsoft App ID) for the bot service, which would be used to create teams app via manifest file
+// deleting and recreating means it would generate new identity, and map it to bot in entire IaC and existing teams app would fail to connect
+// Also, fix the name so that, we dont change resource prefix in main.bicep resulting in new identity to be created, resulting in new Microsoft App ID for the bot service
+var managedIdentityName = 'app-base-name-managed-identity'
 
 // Create the user-assigned managed identity
 resource userAssignedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-07-31-preview' = {
@@ -207,15 +270,16 @@ resource userAssignedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@
   })
 }
 
-// existing Key Vault in 'kvResourceGroupName' with name 'keyVaultName'
-module dependentRoleAssignmentModule '../managed_identity_roles/managedIdentityRoles.bicep' = {
-  name: 'dependentRoleAssignmentModule'
-  scope: resourceGroup(kvResourceGroupName)
-  params: {
-    keyVaultName: keyVaultName
-    managedIdentityPrincipalId: userAssignedIdentity.properties.principalId
-  }
-}
+// in the key vault that comes from different RG, enable if needed, accept kvResourceGroupName, kvResourceGroupName here, and pass from caller
+// module productAssistantRoleAssignmentModule '../managed_identity_roles/managedIdentityRoles.bicep' = {
+//   name: 'otherRGRoleAssignmentModule'
+//   scope: resourceGroup(kvResourceGroupName) // this is in some other RG
+//   params: {
+//     keyVaultName: keyVaultName
+//     managedIdentityPrincipalId: userAssignedIdentity.properties.principalId
+//   }
+// }
+
 
 // in the teams RG itself
 module botRGRoleAssignmentModule '../managed_identity_roles/thisRGmanagedIdentityRoles.bicep' = {
@@ -551,6 +615,7 @@ output defaultDomain string = appServiceApp.properties.defaultHostName
 
 Create the Bot service.
 Here you can choose SKUs depending on the deployment stage.
+Also enable the teams channel - we are building app for teams !
 
 
 ```yaml 
@@ -592,6 +657,20 @@ resource botService 'Microsoft.BotService/botServices@2023-09-15-preview' = {
     name: botServiceName
   })
 }
+
+
+resource teamsChannel 'Microsoft.BotService/botServices/channels@2023-09-15-preview' = {
+  name: 'MsTeamsChannel'
+  parent: botService
+  location: location
+  properties: {
+    channelName: 'MsTeamsChannel'
+    properties: {
+        enableCalling: false
+        isEnabled: true
+    }
+  }
+}
 ```
 
 
@@ -608,9 +687,10 @@ param location = 'westeurope'
 param deploymentStage = 'non-prod'
 param userAppSettings = {}
 
-// here these are the existing resources in the same subscription which Bot's identity wants to use
-param keyVaultName =  ''
-param keyVaultResourceGroupName =''
+//existing
+param appInsightsKey =  ''
+param backEndAPIBaseURL =''
+param backEndAPIKey =''
 ```
 
 ## Create main.bicep
@@ -628,12 +708,17 @@ or even as defined for other modules !!
 @description('The location of resource. Defaults to location of resource group. Note that bot service is not supported in all regions')
 param location string = resourceGroup().location
 
-@description('Name of key vault where app settings are kept')
-param keyVaultName string
+@secure()
+@description('Existing Application Insights instance connection string')
+param appInsightsKey string
 
-@description('Resource Group where key vault exists')
-param keyVaultResourceGroupName string
+@secure()
+@description('API URL')
+param backEndAPIBaseURL string
 
+@secure()
+@description('API key')
+param backEndAPIKey string
 
 @description('Deployment type - prod, non-prod')
 @allowed([
@@ -669,6 +754,9 @@ module botKeyVaultModule 'modules/key_vault/keyVault.bicep' = {
     resourcePrefix: resourcePrefix
     location: location
     commonTags: commonTags
+    appInsightsKey: appInsightsKey
+    backEndAPIBaseURL: backEndAPIBaseURL
+    backEndAPIKey: backEndAPIKey
   }
 }
 
@@ -677,9 +765,6 @@ module managedIdentityModule 'modules/managed_identity/managedIdentity.bicep' = 
   name: 'managedIdentityDeployment'
   params: {
     resourcePrefix: resourcePrefix
-    keyVaultName: keyVaultName
-    // dont use name keyVaultResourceGroupName
-    kvResourceGroupName: keyVaultResourceGroupName
     teamsBotKeyVaultName: botKeyVaultModule.outputs.botKeyVaultName
     location: location
     commonTags: commonTags
@@ -688,7 +773,6 @@ module managedIdentityModule 'modules/managed_identity/managedIdentity.bicep' = 
     botKeyVaultModule
   ]
 }
-
 
 module cosmosDBModule 'modules/database_cosmos/databaseCosmos.bicep' = {
   name: 'cosmosDBDeployment'
@@ -768,12 +852,19 @@ output teamsBotCosmosDBAccountId string = cosmosDBModule.outputs.databaseAccount
 ## Create .env file
 
 ```text
+
+
 # use this to create resource names, also set as app setting on web app, for using stage in code
 DEPLOYMENT_STAGE='non-prod'
 
-# app may need to connect to a vault in its own Resource Group -  a usual scenario, provide these
-KEY_VAULT_NAME=existing-vault-name
-KEY_VAULT_RESOURCE_GROUP_NAME=existing-vaults-resource-group-name
+# bot connects to a back end API to respond to queries
+BACK_END_API_BASE_URL='https://my.back.end/'
+BACK_END_API_KEY='key'
+
+# existing instance
+APP_INSIGHTS_KEY='InstrumentationKey=...'
+
+
 
 # where do we deploy the webapp
 LOCATION='westeurope'
@@ -823,7 +914,7 @@ fi
 
 
 # List of required environment variables
-required_env_vars=("LOCATION" "TEAMS_BOT_RESOURCE_GROUP_NAME" "KEY_VAULT_NAME" "KEY_VAULT_RESOURCE_GROUP_NAME" "SOME_OTHER_APP_SETTING")
+required_env_vars=("LOCATION" "TEAMS_BOT_RESOURCE_GROUP_NAME" "BACK_END_API_BASE_URL" "BACK_END_API_KEY" "APP_INSIGHTS_KEY" "SOME_OTHER_APP_SETTING")
 
 # Load environment variables from .env file
 if [ -f ../.env ]; then
@@ -864,6 +955,7 @@ commitId=$(git rev-parse --short=7 HEAD)
 
 echo "The short commit ID is: $commitId"
 
+
 # Run the deployment command, did not use name as we have each resource deployment name in bicep
 az deployment group create \
   --resource-group $TEAMS_BOT_RESOURCE_GROUP_NAME \
@@ -873,14 +965,13 @@ az deployment group create \
   --parameters params.bicepparam \
    location=$LOCATION \
    deploymentStage=$deploymentStage \
-   keyVaultName=$KEY_VAULT_NAME \
-   keyVaultResourceGroupName=$KEY_VAULT_RESOURCE_GROUP_NAME \
+   appInsightsKey=$APP_INSIGHTS_KEY \
+   backEndAPIBaseURL=$BACK_END_API_BASE_URL \
+   backEndAPIKey=$BACK_END_API_KEY \
    userAppSettings="{ \
     \"SOME_OTHER_APP_SETTING\": \"$SOME_OTHER_APP_SETTING\", \
     \"COMMIT_ID\":  \"$commitId\", \
-    \"DEPLOYMENT_STAGE\": \"$deploymentStage\", \
-    \"KEY_VAULT_NAME\": \"$KEY_VAULT_NAME\", \
-    \"KEY_VAULT_RESOURCE_GROUP_NAME\": \"$KEY_VAULT_RESOURCE_GROUP_NAME\" \
+    \"DEPLOYMENT_STAGE\": \"$deploymentStage\" \
   }"
 
 # Get the deployment outputs, 'appServiceDeployment' is fixed in bicep scripts
@@ -972,3 +1063,10 @@ az webapp deploy --resource-group $TEAMS_BOT_RESOURCE_GROUP_NAME\
 
 python -m pytest ../tests/deploy
 ```
+
+
+# GitHub Actions as CI / CD
+
+In the next blog, we would integrate these scripts in CI / CD pipeline, in a very pretty & usable manner with GitHub actions.
+
+[CI / CD with GitHub Actions - deploying on Azure [app & bot service] with GitHub reusable workflows !](github_actions.md)
